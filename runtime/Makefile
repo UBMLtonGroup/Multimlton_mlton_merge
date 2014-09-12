@@ -1,5 +1,4 @@
-## Copyright (C) 2010-2013 Matthew Fluet.
- # Copyright (C) 1999-2009 Henry Cejtin, Matthew Fluet, Suresh
+## Copyright (C) 1999-2009 Henry Cejtin, Matthew Fluet, Suresh
  #    Jagannathan, and Stephen Weeks.
  # Copyright (C) 1997-2000 NEC Research Institute.
  #
@@ -31,111 +30,83 @@ GCC_MINOR_VERSION :=						\
 		sed 's/.*gcc version \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\2/')
 GCC_VERSION := $(GCC_MAJOR_VERSION).$(GCC_MINOR_VERSION)
 
+FLAGS := -fno-common
 EXE :=
-
-# These flags can be overridden by the user
-CPPFLAGS :=
-CFLAGS :=
-
-WARNXCFLAGS :=
-WARNXCFLAGS += -pedantic -Wall
-ifeq ($(findstring $(GCC_MAJOR_VERSION), 3),$(GCC_MAJOR_VERSION))
-WARNXCFLAGS += -W
-endif
-ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
-WARNXCFLAGS += -Wextra
-endif
-WARNXCFLAGS += -Wformat=2
-ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
-WARNXCFLAGS += -Wswitch-default -Wswitch-enum
-endif
-WARNXCFLAGS += -Wuninitialized
-ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
-WARNXCFLAGS += -Winit-self
-endif
-ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
-WARNXCFLAGS += -Wstrict-aliasing=2
-endif
-WARNXCFLAGS += -Wfloat-equal
-WARNXCFLAGS += -Wundef
-WARNXCFLAGS += -Wshadow
-WARNXCFLAGS += -Wpointer-arith
-WARNXCFLAGS += -Wbad-function-cast -Wcast-qual
-WARNXCFLAGS += -Wwrite-strings
-# WARNXCFLAGS += -Wconversion
-WARNXCFLAGS += -Waggregate-return
-WARNXCFLAGS += -Wstrict-prototypes
-ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
-WARNXCFLAGS += -Wold-style-definition
-endif
-WARNXCFLAGS += -Wmissing-prototypes -Wmissing-declarations
-ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
-WARNXCFLAGS += -Wmissing-field-initializers
-endif
-WARNXCFLAGS += -Wmissing-noreturn
-WARNXCFLAGS += -Wmissing-format-attribute
-# WARNXCFLAGS += -Wpacked
-# WARNXCFLAGS += -Wpadded
-WARNXCFLAGS += -Wredundant-decls
-WARNXCFLAGS += -Wnested-externs
-# WARNXCFLAGS += -Wunreachable-code
-
-XCFLAGS := -fno-common $(WARNXCFLAGS)
-OPTXCFLAGS := -Wdisabled-optimization -O2 -fomit-frame-pointer
-DEBUGXCFLAGS := -DASSERT=1 -Wno-uninitialized -O0 -g
-PICXCFLAGS :=
+OPTFLAGS := -O2 -fomit-frame-pointer
+DEBUGFLAGS := -O1 -fno-inline -fkeep-inline-functions -g2
+PICFLAGS := -DPIC
+GCOPTFLAGS :=
+GCDEBUGFLAGS :=
+GCPICFLAGS :=
+WARNFLAGS :=
+OPTWARNFLAGS :=
+DEBUGWARNFLAGS :=
+PICWARNFLAGS :=
+EXTRA_LIBS :=
 
 # Win32&64 don't use PIC code, all other platforms do
 ifeq ($(findstring $(TARGET_OS), mingw cygwin),)
-PICXCFLAGS += -fPIC
+PICFLAGS += -fPIC
 endif
 
 # Make mlton library symbols private (win32&64 use another technique)
 ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
 ifeq ($(findstring $(TARGET_OS), mingw cygwin),)
-XCFLAGS += -fvisibility=hidden
+FLAGS += -fvisibility=hidden
 endif
-endif
-
-ifeq ($(TARGET_ARCH), alpha)
-XCFLAGS += -mieee -mbwx -mtune=ev6 -mfp-rounding-mode=d
 endif
 
 ifeq ($(TARGET_ARCH), amd64)
-XCFLAGS += -m64
+FLAGS += -m64
+ifeq ($(findstring $(GCC_VERSION), 3.4 4.0 4.1 4.3),$(GCC_VERSION))
+GCOPTFLAGS += --param inline-unit-growth=100
+GCOPTFLAGS += --param max-inline-insns-single=1000
+GCOPTFLAGS += --param large-function-growth=1000
+endif
+DEBUGFLAGS += -gstabs+
+OPTWARNFLAGS += -Winline
 endif
 
 ifeq ($(findstring $(TARGET_ARCH), hppa ia64 powerpc sparc),$(TARGET_ARCH))
 ifeq (4.2, $(firstword $(sort $(GCC_VERSION) 4.2)))
 # GMP headers contain C99 inline functions which generate warnings
 # with a suggestion to use this flag to disable the warnings.
-XCFLAGS += -fgnu89-inline
+FLAGS += -fgnu89-inline
 endif
 endif
 
 ifeq ($(TARGET_ARCH), ia64)
-XCFLAGS += -mtune=itanium2
-ifeq ($(TARGET_OS), hpux)
-XCFLAGS += -mlp64
-endif
+FLAGS += -mlp64 -mtune=itanium2
 endif
 
-ifeq ($(TARGET_OS)-$(TARGET_ARCH), aix-powerpc64)
-XCFLAGS += -maix64
+ifeq ($(TARGET_OS)-$(TARGET_ARCH), aix-powerpc)
+FLAGS += -maix64
 AR := ar -X 64 rc
 endif
 
 ifeq ($(TARGET_ARCH), sparc)
-XCFLAGS += -m32 -mcpu=v8 -Wa,-xarch=v8plusa
+FLAGS += -m32 -mcpu=v8 -Wa,-xarch=v8plusa
 endif
 
 ifeq ($(TARGET_ARCH), x86)
-XCFLAGS += -m32
-ifeq (3, $(firstword $(sort $(GCC_MAJOR_VERSION) 3)))
-OPTXCFLAGS += -falign-loops=2 -falign-jumps=2 -falign-functions=5
+FLAGS += -m32
+ifeq ($(findstring $(GCC_MAJOR_VERSION), 3 4),$(GCC_MAJOR_VERSION))
+OPTFLAGS += -falign-loops=2 -falign-jumps=2 -falign-functions=5
 else
-OPTXCFLAGS += -malign-loops=2 -malign-jumps=2 -malign-functions=5
+OPTFLAGS += -malign-loops=2 -malign-jumps=2 -malign-functions=5
 endif
+ifeq ($(findstring $(GCC_VERSION), 3.3 3.4 4.0),$(GCC_VERSION))
+GCOPTFLAGS += --param max-inline-insns-single=1000
+ifeq ($(findstring $(GCC_VERSION), 3.4 4.0),$(GCC_VERSION))
+GCOPTFLAGS += --param inline-unit-growth=200
+GCOPTFLAGS += --param large-function-growth=2200
+OPTWARNFLAGS += -Winline
+endif
+endif
+ifeq ($(findstring $(GCC_VERSION), 4.1),$(GCC_VERSION))
+OPTWARNFLAGS += -Winline
+endif
+DEBUGFLAGS += -gstabs+
 endif
 
 ifeq ($(TARGET_OS), cygwin)
@@ -143,45 +114,95 @@ EXE := .exe
 endif
 
 ifeq ($(TARGET_OS), darwin)
-XCFLAGS += -I/usr/local/include -I/sw/include -I/opt/local/include
+FLAGS += -I/usr/local/include -I/sw/include -I/opt/local/include
 endif
 
 ifeq ($(TARGET_OS), freebsd)
-XCFLAGS += -I/usr/local/include
+FLAGS += -I/usr/local/include
 endif
 
 ifeq ($(TARGET_OS), mingw)
 EXE := .exe
-# GCC doesn't recognize the %I64 format specifier which means %ll on windows
-XCFLAGS += -Wno-format -Wno-missing-format-attribute
 endif
 
 ifeq ($(TARGET_OS), netbsd)
-XCFLAGS += -I/usr/pkg/include
+FLAGS += -I/usr/pkg/include
+endif
+
+ifeq ($(TARGET_OS), linux)
+FLAGS += -Iplpa
+EXTRA_LIBS += libplpa_included.a
 endif
 
 ifeq ($(TARGET_OS), openbsd)
-XCFLAGS += -I/usr/local/include
+FLAGS += -I/usr/local/include
 endif
 
 ifeq ($(TARGET_OS), solaris)
-XCFLAGS += -funroll-all-loops
+FLAGS += -funroll-all-loops
 endif
 
+CPPFLAGS :=
+CFLAGS := -I. -Iplatform $(FLAGS)
+OPTCFLAGS := $(CFLAGS) $(CPPFLAGS) $(OPTFLAGS)
+DEBUGCFLAGS := $(CFLAGS) $(CPPFLAGS) -DASSERT=1 $(DEBUGFLAGS)
+PICCFLAGS := $(CFLAGS) $(CPPFLAGS) $(OPTFLAGS) $(PICFLAGS)
+GCOPTCFLAGS = $(GCOPTFLAGS)
+GCDEBUGCFLAGS = $(GCDEBUGFLAGS)
+GCPICCFLAGS = $(GCOPTFLAGS) $(GCPICFLAGS)
+WARNCFLAGS :=
+WARNCFLAGS += -pedantic -Wall
+ifeq ($(findstring $(GCC_MAJOR_VERSION), 3),$(GCC_MAJOR_VERSION))
+WARNCFLAGS += -W
+endif
+ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
+WARNCFLAGS += -Wextra
+endif
+WARNCFLAGS += -Wformat=2
+ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
+WARNCFLAGS += -Wswitch-default -Wswitch-enum
+endif
+WARNCFLAGS += -Wuninitialized
+ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
+WARNCFLAGS += -Winit-self
+endif
+ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
+WARNCFLAGS += -Wstrict-aliasing=2
+endif
+WARNCFLAGS += -Wfloat-equal
+WARNCFLAGS += -Wundef
+WARNCFLAGS += -Wshadow
+WARNCFLAGS += -Wpointer-arith
+WARNCFLAGS += -Wbad-function-cast -Wcast-qual -Wcast-align
+WARNCFLAGS += -Wwrite-strings
+# WARNCFLAGS += -Wconversion
+WARNCFLAGS += -Waggregate-return
+WARNCFLAGS += -Wstrict-prototypes
+ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
+WARNCFLAGS += -Wold-style-definition
+endif
+WARNCFLAGS += -Wmissing-prototypes -Wmissing-declarations
+ifeq ($(findstring $(GCC_MAJOR_VERSION), 4),$(GCC_MAJOR_VERSION))
+WARNCFLAGS += -Wmissing-field-initializers
+endif
+WARNCFLAGS += -Wmissing-noreturn
+WARNCFLAGS += -Wmissing-format-attribute
+# WARNCFLAGS += -Wpacked
+# WARNCFLAGS += -Wpadded
+WARNCFLAGS += -Wredundant-decls
+WARNCFLAGS += -Wnested-externs
+WARNCFLAGS += -Wlong-long
+# WARNCFLAGS += -Wunreachable-code
+WARNCFLAGS += $(WARNFLAGS)
 
-XCFLAGS += -I. -Iplatform
-OPTCFLAGS := $(CFLAGS) $(CPPFLAGS) $(XCFLAGS) $(OPTXCFLAGS)
-DEBUGCFLAGS := $(CFLAGS) $(CPPFLAGS) $(XCFLAGS) $(DEBUGXCFLAGS)
-PICCFLAGS := $(OPTCFLAGS) $(PICXCFLAGS)
+# GCC doesn't recognize the %I64 format specifier which means %ll on windows
+ifeq ($(TARGET_OS), mingw)
+WARNCFLAGS += -Wno-format -Wno-missing-format-attribute
+endif
 
-ALL := libgdtoa.a libgdtoa-gdb.a libgdtoa-pic.a \
-       libmlton.a libmlton-gdb.a libmlton-pic.a
-ALL += gen/c-types.sml gen/basis-ffi.sml gen/sizes
-
-all: $(ALL)
-
-
-### util ###
+OPTWARNCFLAGS := $(WARNCFLAGS) -Wdisabled-optimization $(OPTWARNFLAGS)
+DEBUGWARNCFLAGS := $(WARNCFLAGS) $(DEBUGWARNFLAGS)
+PICWARNCFLAGS := $(WARNCFLAGS) $(OPTWARNFLAGS) $(PICWARNFLAGS)
 
 UTILHFILES :=							\
 	util.h							\
@@ -189,104 +210,9 @@ UTILHFILES :=							\
 UTILCFILES :=							\
 	$(shell find util -type f | grep '\.c$$')
 
-util-pic.o: util.c $(UTILCFILES) cenv.h $(UTILHFILES)
-	$(CC) $(PICCFLAGS) -c -o $@ $<
-util-gdb.o: util.c $(UTILCFILES) cenv.h $(UTILHFILES)
-	$(CC) $(DEBUGCFLAGS) -c -o $@ $<
-util.o:     util.c $(UTILCFILES) cenv.h $(UTILHFILES)
-	$(CC) $(OPTCFLAGS) -c -o $@ $<
-
-### c-types.h  ml-types.h  gen/c-types.sml ###
-
-c-types.h: gen/c-types.h
-	cp $< $@
-ml-types.h: gen/ml-types.h
-	cp $< $@
-gen/c-types.h gen/c-types.sml gen/ml-types.h: gen/gen-types.stamp
-	@touch $@
-gen/gen-types.stamp: gen/gen-types.c util.h util.o
-	$(CC) $(OPTCFLAGS) -o gen/gen-types gen/gen-types.c util.o
-	rm -f gen/c-types.h gen/c-types.sml gen/ml-types.h gen/gen-types.stamp
-	cd gen && ./gen-types
-	rm -f gen/gen-types$(EXE) gen/gen-types
-	touch $@
-
-### basis-ffi.h  gen/basis-ffi.sml ###
-
-basis-ffi.h: gen/basis-ffi.h
-	cp $< $@
-gen/basis-ffi.h gen/basis-ffi.sml: gen/gen-basis-ffi.stamp
-	@touch $@
-gen/gen-basis-ffi.stamp: gen/gen-basis-ffi.sml gen/basis-ffi.def
-	mlton -output gen/gen-basis-ffi gen/gen-basis-ffi.sml
-	rm -f gen/basis-ffi.h gen/basis-ffi.sml gen/gen-basis-ffi.stamp
-	cd gen && ./gen-basis-ffi
-	rm -f gen/gen-basis-ffi
-	touch $@
-
-### libgdtoa ###
-
-GDTOAHFILES := arith.h gdtoa.h
-GDTOAHFILES := $(patsubst %,gdtoa/%,$(GDTOAHFILES))
-GDTOACFILES :=									\
-	dmisc.c     g_ddfmt.c   g_ffmt_p.c  gdtoa.c     misc.c      strtoIf.c   strtodI.c   strtopdd.c  strtord.c   sum.c \
-	dtoa.c      g_ddfmt_p.c g_xLfmt.c   gethex.c    smisc.c     strtoIg.c   strtodg.c   strtopf.c   strtordd.c  ulp.c \
-	g_Qfmt.c    g_dfmt.c    g_xLfmt_p.c gmisc.c     strtoIQ.c   strtoIx.c   strtof.c    strtopx.c   strtorf.c \
-	g_Qfmt_p.c  g_dfmt_p.c  g_xfmt.c    hd_init.c   strtoId.c   strtoIxL.c  strtopQ.c   strtopxL.c  strtorx.c \
-	g__fmt.c    g_ffmt.c    g_xfmt_p.c  hexnan.c    strtoIdd.c  strtod.c    strtopd.c   strtorQ.c   strtorxL.c
-GDTOACFILES := $(patsubst %,gdtoa/%,$(GDTOACFILES))
-
-GDTOA_OBJS       := $(patsubst %.c,%.o,$(GDTOACFILES))
-GDTOA_DEBUG_OBJS := $(patsubst %.c,%-gdb.o,$(GDTOACFILES))
-GDTOA_PIC_OBJS   := $(patsubst %.c,%-pic.o,$(GDTOACFILES))
-
-gdtoa/README: gdtoa.tgz gdtoa.may_alias-unions.patch gdtoa.rename-public-fns.patch gdtoa.hide-private-fns.patch gdtoa.hide-public-fns.patch
-	gzip -dc gdtoa.tgz | tar xf -
-	patch -s -p0 <gdtoa.may_alias-unions.patch
-	patch -s -p0 <gdtoa.rename-public-fns.patch
-	patch -s -p0 <gdtoa.hide-private-fns.patch
-	patch -s -p0 <gdtoa.hide-public-fns.patch
-	@touch $@
-
-gdtoa/gdtoa.h $(GDTOACFILES): gdtoa/README
-	@touch $@
-
-gdtoa/arithchk.c: gdtoa/README
-	@touch $@
-
-gdtoa/arithchk.out: gdtoa/arithchk.c
-	cd gdtoa && $(CC) $(OPTCFLAGS) -w -O1 -o arithchk.out arithchk.c
-
-gdtoa/arith.h: gdtoa/arithchk.out
-	cd gdtoa && ./arithchk.out >arith.h
-
-gdtoa/qnan.c: gdtoa/README
-	@touch $@
-
-gdtoa/qnan.out: gdtoa/arith.h gdtoa/qnan.c
-	cd gdtoa && $(CC) $(OPTCFLAGS) -w -O1 -o qnan.out qnan.c
-
-gdtoa/gd_qnan.h: gdtoa/qnan.out
-	cd gdtoa && ./qnan.out >gd_qnan.h
-
-gdtoa/%-pic.o: gdtoa/%.c gdtoa/arith.h gdtoa/gd_qnan.h
-	$(CC) $(PICCFLAGS) -w -DINFNAN_CHECK -c -o $@ $<
-gdtoa/%-gdb.o: gdtoa/%.c gdtoa/arith.h gdtoa/gd_qnan.h
-	$(CC) $(DEBUGCFLAGS) -w -DINFNAN_CHECK -c -o $@ $<
-gdtoa/%.o:     gdtoa/%.c gdtoa/arith.h gdtoa/gd_qnan.h
-	$(CC) $(OPTCFLAGS) -w -DINFNAN_CHECK -c -o $@ $<
-
-libgdtoa.a:     $(GDTOA_OBJS)
-libgdtoa-gdb.a: $(GDTOA_DEBUG_OBJS)
-libgdtoa-pic.a: $(GDTOA_PIC_OBJS)
-
-### libmlton ###
-
 PLATFORMHFILES :=						\
 	platform.h						\
 	$(shell find platform -type f | grep '\.h$$')
-PLATFORMCFILES :=						\
-	$(shell find platform -type f | grep '\.c$$')
 
 GCHFILES :=							\
 	gc.h							\
@@ -294,92 +220,231 @@ GCHFILES :=							\
 GCCFILES :=							\
 	$(shell find gc -type f | grep '\.c$$')
 
+BYTECODEHFILES :=						\
+	$(shell find bytecode -type f | grep '\.h$$')
+
+BASISHFILES :=							\
+	ml-types.h						\
+	c-types.h						\
+	basis-ffi.h						\
+	$(shell find basis -type f | grep '\.h$$')
 BASISCFILES :=							\
 	$(shell find basis -type f | grep '\.c$$')
 
 HFILES :=							\
 	cenv.h							\
 	$(UTILHFILES)						\
-	ml-types.h						\
-	c-types.h						\
-	basis-ffi.h						\
 	$(PLATFORMHFILES)					\
-	$(GCHFILES)
+	$(GCHFILES)						\
+	$(BASISHFILES)
 
-MLTON_OBJS := 							\
+OBJS := 							\
 	util.o							\
+	gc.o							\
 	platform.o						\
-	platform/$(TARGET_OS).o					\
-	gc.o
-MLTON_OBJS += $(foreach f, $(basename $(BASISCFILES)), $(f).o)
-MLTON_DEBUG_OBJS := $(patsubst %.o,%-gdb.o,$(MLTON_OBJS))
-MLTON_PIC_OBJS   := $(patsubst %.o,%-pic.o,$(MLTON_OBJS))
+	platform/$(TARGET_OS).o
+DEBUG_OBJS := 							\
+	util-gdb.o						\
+	gc-gdb.o						\
+	platform-gdb.o						\
+	platform/$(TARGET_OS)-gdb.o
+PIC_OBJS := 							\
+	util-pic.o						\
+	gc-pic.o						\
+	platform-pic.o						\
+	platform/$(TARGET_OS)-pic.o
 
-platform/$(TARGET_OS)-pic.o: $(PLATFORMCFILES)
-platform/$(TARGET_OS)-gdb.o: $(PLATFORMCFILES)
-platform/$(TARGET_OS).o:     $(PLATFORMCFILES)
+OMIT_BYTECODE := yes
+ifeq ($(OMIT_BYTECODE), yes)
+else
+  OBJS += bytecode/interpret.o
+  DEBUG_OBJS += bytecode/interpret-gdb.o
+  PIC_OBJS += bytecode/interpret-pic.o
+endif
 
-gc-pic.o: $(GCCFILES)
-gc-gdb.o: $(GCCFILES)
-gc.o:     $(GCCFILES)
+ifeq ($(COMPILE_FAST), yes)
+  OBJS += basis.o
+  DEBUG_OBJS += basis-gdb.o
+  PIC_OBJS += basis-pic.o
+else
+  OBJS += 							\
+	$(foreach f, $(basename $(BASISCFILES)), $(f).o)
+  DEBUG_OBJS += 						\
+	$(foreach f, $(basename $(BASISCFILES)), $(f)-gdb.o)
+  PIC_OBJS += 						\
+	$(foreach f, $(basename $(BASISCFILES)), $(f)-pic.o)
+endif
 
-gc.c_XCFLAGS := -Wno-unreachable-code
+ALL := libgdtoa.a libgdtoa-gdb.a libgdtoa-pic.a \
+       libmlton.a libmlton-gdb.a libmlton-pic.a $(EXTRA_LIBS)
+ALL += gen/c-types.sml gen/basis-ffi.sml gen/sizes
 
-basis/Real/Math-pic.o:  basis/Real/Math-fns.h
-basis/Real/Math-gdb.o:  basis/Real/Math-fns.h
-basis/Real/Math.o:      basis/Real/Math-fns.h
-basis/Real/Real-pic.o:  basis/Real/Real-ops.h
-basis/Real/Real-gdb.o:  basis/Real/Real-ops.h
-basis/Real/Real.o:      basis/Real/Real-ops.h
-basis/Real/Real.c_XCFLAGS := -Wno-float-equal
-basis/Real/gdtoa-pic.o: $(GDTOAHFILES)
-basis/Real/gdtoa-gdb.o: $(GDTOAHFILES)
-basis/Real/gdtoa.o:     $(GDTOAHFILES)
-basis/Real/strto-pic.o: $(GDTOAHFILES)
-basis/Real/strto-gdb.o: $(GDTOAHFILES)
-basis/Real/strto.o:     $(GDTOAHFILES)
-basis/System/Date.c_XCFLAGS := -Wno-format-nonliteral
-basis/Word/Word-pic.o:  basis/Word/Word-consts.h basis/Word/Word-ops.h basis/Word/Word-check.h
-basis/Word/Word-gdb.o:  basis/Word/Word-consts.h basis/Word/Word-ops.h basis/Word/Word-check.h
-basis/Word/Word.o:      basis/Word/Word-consts.h basis/Word/Word-ops.h basis/Word/Word-check.h
-basis/coerce-pic.o:     basis/coerce.h
-basis/coerce-gdb.o:     basis/coerce.h
-basis/coerce.o:         basis/coerce.h
-basis/cpointer-pic.o:   basis/cpointer.h
-basis/cpointer-gdb.o:   basis/cpointer.h
-basis/cpointer.o:       basis/cpointer.h
+ifeq ($(OMIT_BYTECODE), yes)
+else
+  ALL += bytecode/opcodes
+endif
 
-%-pic.o: %.c $(HFILES)
-	$(CC) $(PICCFLAGS) $($(<)_XCFLAGS) -c -o $@ $<
-%-gdb.o: %.c $(HFILES)
-	$(CC) $(DEBUGCFLAGS) $($(<)_XCFLAGS) -c -o $@ $<
-%.o: %.c $(HFILES)
-	$(CC) $(OPTCFLAGS) $($(<)_XCFLAGS) -c -o $@ $<
+all: $(ALL)
 
-libmlton.a: $(MLTON_OBJS)
-libmlton-gdb.a: $(MLTON_DEBUG_OBJS)
-libmlton-pic.a: $(MLTON_PIC_OBJS)
+libgdtoa.a: gdtoa/arith.h
+	cd gdtoa && 						\
+		$(CC) $(OPTCFLAGS) $(OPTWARNCFLAGS)		\
+			-w -O1 -c -DINFNAN_CHECK 		\
+			*.c
+	$(RM) gdtoa/arithchk.o
+	$(AR) libgdtoa.a gdtoa/*.o
+	$(RANLIB) libgdtoa.a
 
-### gen/sizes ###
+libgdtoa-gdb.a: gdtoa/arith.h
+	cd gdtoa && 						\
+		$(CC) $(DEBUGCFLAGS) $(DEBUGWARNCFLAGS)		\
+			-w -O1 -c -DINFNAN_CHECK 		\
+			*.c
+	$(RM) gdtoa/arithchk.o
+	$(AR) libgdtoa-gdb.a gdtoa/*.o
+	$(RANLIB) libgdtoa-gdb.a
 
-gen/sizes: gen/gen-sizes.stamp
-	@touch $@
-gen/gen-sizes.stamp: gen/gen-sizes.c libmlton.a $(HFILES)
-	$(CC) $(OPTCFLAGS) -o gen/gen-sizes gen/gen-sizes.c -L. -lmlton
-	rm -f gen/sizes
-	cd gen && ./gen-sizes
-	rm -f gen/gen-sizes$(EXE) gen/gen-sizes
-	touch $@
+libgdtoa-pic.a: gdtoa/arith.h
+	cd gdtoa && 						\
+		$(CC) $(PICCFLAGS) $(PICWARNCFLAGS)		\
+			-w -O1 -c -DINFNAN_CHECK 		\
+			*.c
+	$(RM) gdtoa/arithchk.o
+	$(AR) libgdtoa-pic.a gdtoa/*.o
+	$(RANLIB) libgdtoa-pic.a
 
+gdtoa/arithchk.c:
+	gzip -dc gdtoa.tgz | tar xf -
+	patch -s -p0 <gdtoa-patch
+	patch -s -p0 <gdtoa-patch.internal
+	patch -s -p0 <gdtoa-patch.mlton
 
-######
+gdtoa/arithchk.out: gdtoa/arithchk.c
+	cd gdtoa && $(CC) $(OPTCFLAGS) $(OPTWARNCFLAGS) -w -O1 -o arithchk.out arithchk.c
 
+gdtoa/arith.h: gdtoa/arithchk.out
+	cd gdtoa && ./arithchk.out >arith.h
 
-%.a:
-	rm -f $@
-	$(AR) $@ $^
+libplpa_included.a: plpa/plpa_api_probe.c plpa/plpa_dispatch.c
+	@rm -f $@
+	cd plpa && $(CC) $(OPTCFLAGS) -c plpa_api_probe.c
+	cd plpa && $(CC) $(OPTCFLAGS) -c plpa_dispatch.c
+	$(AR) $@ plpa/*.o
 	$(RANLIB) $@
 
+libmlton.a: $(OBJS)
+	$(AR) libmlton.a $(OBJS)
+	$(RANLIB) libmlton.a
+
+libmlton-gdb.a: $(DEBUG_OBJS)
+	$(AR) libmlton-gdb.a $(DEBUG_OBJS)
+	$(RANLIB) libmlton-gdb.a
+
+libmlton-pic.a: $(PIC_OBJS)
+	$(AR) libmlton-pic.a $(PIC_OBJS)
+	$(RANLIB) libmlton-pic.a
+
+
+basis.c: $(BASISCFILES)
+	rm -f basis.c
+	cat $(BASISCFILES) >> basis.c
+
+gen/c-types.h gen/c-types.sml gen/ml-types.h: gen/gen-types.c util.h util.o
+	$(CC) $(OPTCFLAGS) $(WARNCFLAGS) -o gen/gen-types gen/gen-types.c util.o
+	rm -f gen/c-types.h gen/c-types.sml gen/ml-types.h
+	cd gen && ./gen-types
+	rm -f gen/gen-types$(EXE)
+
+c-types.h ml-types.h: gen/c-types.h gen/ml-types.h
+	rm -f c-types.h ml-types.h
+	cp gen/c-types.h c-types.h
+	cp gen/ml-types.h ml-types.h
+
+gen/basis-ffi.h gen/basis-ffi.sml: gen/gen-basis-ffi.sml gen/basis-ffi.def
+	mlton -output gen/gen-basis-ffi gen/gen-basis-ffi.sml
+	rm -f gen/basis-ffi.h gen/basis-ffi.sml
+	cd gen && ./gen-basis-ffi
+	rm -f gen/gen-basis-ffi
+
+basis-ffi.h: gen/basis-ffi.h
+	rm -f basis-ffi.h
+	cp gen/basis-ffi.h basis-ffi.h
+
+gen/sizes: gen/gen-sizes.c libmlton.a
+	$(CC) $(OPTCFLAGS) $(WARNCFLAGS) -o gen/gen-sizes -I. -L. -lmlton gen/gen-sizes.c util.o
+	rm -f gen/sizes
+	cd gen && ./gen-sizes
+	rm -f gen/gen-sizes$(EXE)
+
+bytecode/opcodes: bytecode/print-opcodes.c bytecode/opcode.h
+	$(CC) $(OPTCFLAGS) $(WARNCFLAGS) -o bytecode/print-opcodes bytecode/print-opcodes.c
+	rm -f bytecode/opcodes
+	cd bytecode && ./print-opcodes > opcodes
+	rm -f bytecode/print-opcodes$(EXE)
+
+
+util-pic.o: util.c $(UTILCFILES) cenv.h $(UTILHFILES)
+	$(CC) $(PICCFLAGS) $(PICWARNCFLAGS) -c -o $@ $<
+
+util-gdb.o: util.c $(UTILCFILES) cenv.h $(UTILHFILES)
+	$(CC) $(DEBUGCFLAGS) $(DEBUGWARNCFLAGS) -c -o $@ $<
+
+util.o: util.c $(UTILCFILES) cenv.h $(UTILHFILES)
+	$(CC) $(OPTCFLAGS) $(OPTWARNCFLAGS) -c -o $@ $<
+
+gc-pic.o: gc.c $(GCCFILES) $(HFILES)
+	$(CC) $(PICCFLAGS) $(GCPICCFLAGS) $(PICWARNCFLAGS) -c -o $@ $<
+
+gc-gdb.o: gc.c $(GCCFILES) $(HFILES)
+	$(CC) $(DEBUGCFLAGS) $(GCDEBUGCFLAGS) $(DEBUGWARNCFLAGS) -c -o $@ $<
+
+gc.o: gc.c $(GCCFILES) $(HFILES)
+	$(CC) $(OPTCFLAGS) $(GCOPTCFLAGS) $(OPTWARNCFLAGS) -c -o $@ $<
+
+## Needs -Wno-float-equal for Real<N>_equal, included via "c-chunk.h".
+bytecode/interpret-pic.o: bytecode/interpret.c $(HFILES) $(BYTECODEHFILES)
+	$(CC) -I../include $(PICCFLAGS) $(PICWARNCFLAGS) -Wno-float-equal -c -o $@ $<
+
+bytecode/interpret-gdb.o: bytecode/interpret.c $(HFILES) $(BYTECODEHFILES)
+	$(CC) -I../include $(DEBUGCFLAGS) $(DEBUGWARNCFLAGS) -Wno-float-equal -c -o $@ $<
+
+bytecode/interpret.o: bytecode/interpret.c $(HFILES) $(BYTECODEHFILES)
+	$(CC) -I../include $(OPTCFLAGS) $(GCOPTCFLAGS) $(OPTWARNCFLAGS) -Wno-float-equal -c -o $@ $<
+
+
+## Needs -Wno-float-equal for Real<N>_equal;
+## needs -Wno-format-nonliteralfor Date_strfTime;
+## needs -Wno-redundant-decls for 'extern struct GC_state gcState'.
+basis-pic.o: basis.c $(BASISCFILES) $(HFILES)
+	$(CC) -Ibasis -Ibasis/Word -Ibasis/Real $(PICCFLAGS) $(PICWARNCFLAGS) -Wno-float-equal -Wno-format-nonliteral -Wno-redundant-decls -c -o $@ $<
+basis-gdb.o: basis.c $(BASISCFILES) $(HFILES)
+	$(CC) -Ibasis -Ibasis/Word -Ibasis/Real $(DEBUGCFLAGS) $(DEBUGWARNCFLAGS) -Wno-float-equal -Wno-format-nonliteral -Wno-redundant-decls -c -o $@ $<
+basis.o: basis.c $(BASISCFILES) $(HFILES)
+	$(CC) -Ibasis -Ibasis/Word -Ibasis/Real $(OPTCFLAGS) $(OPTWARNCFLAGS) -Wno-float-equal -Wno-format-nonliteral -Wno-redundant-decls -c -o $@ $<
+## Needs -Wno-float-equal for Real<N>_equal.
+basis/Real/Real-pic.o: basis/Real/Real.c $(HFILES)
+	$(CC) $(PICCFLAGS) $(PICWARNCFLAGS) -Wno-float-equal -c -o $@ $<
+basis/Real/Real-gdb.o: basis/Real/Real.c $(HFILES)
+	$(CC) $(DEBUGCFLAGS) $(DEBUGWARNCFLAGS) -Wno-float-equal -c -o $@ $<
+basis/Real/Real.o: basis/Real/Real.c $(HFILES)
+	$(CC) $(OPTCFLAGS) $(OPTWARNCFLAGS) -Wno-float-equal -c -o $@ $<
+## Needs -Wno-format-nonliteralfor Date_strfTime.
+basis/System/Date-pic.o: basis/System/Date.c $(HFILES)
+	$(CC) $(PICCFLAGS) $(PICWARNCFLAGS) -Wno-format-nonliteral -c -o $@ $<
+basis/System/Date-gdb.o: basis/System/Date.c $(HFILES)
+	$(CC) $(DEBUGCFLAGS) $(DEBUGWARNCFLAGS) -Wno-format-nonliteral -c -o $@ $<
+basis/System/Date.o: basis/System/Date.c $(HFILES)
+	$(CC) $(OPTCFLAGS) $(OPTWARNCFLAGS) -Wno-format-nonliteral -c -o $@ $<
+
+
+%-pic.o: %.c $(HFILES)
+	$(CC) $(PICCFLAGS) $(PICWARNCFLAGS) -c -o $@ $<
+
+%-gdb.o: %.c $(HFILES)
+	$(CC) $(DEBUGCFLAGS) $(DEBUGWARNCFLAGS) -c -o $@ $<
+
+%.o: %.c $(HFILES)
+	$(CC) $(OPTCFLAGS) $(OPTWARNCFLAGS) -c -o $@ $<
 
 
 .PHONY: flags
@@ -390,12 +455,27 @@ flags:
 	echo GCC_MAJOR_VERSION = $(GCC_MAJOR_VERSION)
 	echo GCC_MINOR_VERSION = $(GCC_MINOR_VERSION)
 	echo GCC_VERSION = $(GCC_VERSION)
+	echo FLAGS = $(FLAGS)
 	echo EXE = $(EXE)
-	echo OPTXCFLAGS = $(OPTXCFLAGS)
-	echo DEBUGXCFLAGS = $(DEBUGXCFLAGS)
-	echo PICXCFLAGS = $(PICXCFLAGS)
+	echo OPTFLAGS = $(OPTFLAGS)
+	echo GCOPTFLAGS = $(GCOPTFLAGS)
+	echo DEBUGFLAGS = $(DEBUGFLAGS)
+	echo WARNFLAGS = $(WARNFLAGS)
+	echo OPTWARNFLAGS = $(OPTWARNFLAGS)
+	echo DEBUGWARNFLAGS = $(DEBUGWARNFLAGS)
+	echo OBJS = $(OBJS)
+	echo DEBUG_OBJS = $(DEBUG_OBJS)
 
 
 .PHONY: clean
 clean:
 	../bin/clean
+
+.PHONY: gdtoa-patch
+gdtoa-patch:
+	cd gdtoa && $(MAKE) clean && rm -f *~ *.orig
+	mv gdtoa gdtoa-new
+	gzip -dc gdtoa.tgz | tar xf -
+	diff -P -C 2 -r gdtoa gdtoa-new >gdtoa-patch || exit 0
+	rm -rf gdtoa
+	mv gdtoa-new gdtoa

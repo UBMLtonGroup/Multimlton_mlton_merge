@@ -15,26 +15,24 @@ structure One:
    struct
       datatype 'a t = T of {more: unit -> 'a,
                             static: 'a,
-                            staticIsInUse: bool ref}
+                            staticIsInUse: int ref}
 
       fun make f = T {more = f,
                       static = f (),
-                      staticIsInUse = ref false}
+                      staticIsInUse = ref 0}
 
       fun use (T {more, static, staticIsInUse}, f) =
-         let
-            val () = Primitive.MLton.Thread.atomicBegin ()
-            val b = ! staticIsInUse
-            val d =
-               if b then
-                  (Primitive.MLton.Thread.atomicEnd ();
-                   more ())
-               else
-                  (staticIsInUse := true;
-                   Primitive.MLton.Thread.atomicEnd ();
-                   static)
-        in
-           DynamicWind.wind (fn () => f d,
-                             fn () => if b then () else staticIsInUse := false)
-        end
+      let
+        val free = Primitive.MLton.Parallel.compareAndSwap (staticIsInUse, 0, 1)
+        val d = if free then
+                    static
+                else
+                  more ()
+      in
+        DynamicWind.wind (fn () => f d,
+                          fn () => if free then
+                                    ignore (Primitive.MLton.Parallel.compareAndSwap (staticIsInUse, 1, 0))
+                                   else
+                                     ())
+      end
    end

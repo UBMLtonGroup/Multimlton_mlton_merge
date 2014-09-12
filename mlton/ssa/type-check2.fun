@@ -1,5 +1,4 @@
-(* Copyright (C) 2009,2011 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -11,6 +10,9 @@ functor TypeCheck2 (S: TYPE_CHECK2_STRUCTS): TYPE_CHECK2 =
 struct
 
 open S
+
+type int = Int.t
+type word = Word.t
 
 datatype z = datatype Exp.t
 datatype z = datatype Statement.t
@@ -49,7 +51,7 @@ fun checkScopes (program as
          end
 
       val (bindTycon, getTycon, getTycon', _) = make' (Tycon.layout, Tycon.plist)
-      val (bindCon, getCon, _) = make (Con.layout, Con.plist)
+      val (bindCon, getCon, getCon', _) = make' (Con.layout, Con.plist)
       val (bindVar, getVar, getVar', unbindVar) = make' (Var.layout, Var.plist)
       fun getVars xs = Vector.foreach (xs, getVar)
       val (bindFunc, getFunc, _) = make (Func.layout, Func.plist)
@@ -134,47 +136,60 @@ fun checkScopes (program as
                let
                   fun doit (cases: ('a * 'b) vector,
                             equals: 'a * 'a -> bool,
-                            hash: 'a -> word,
-                            numExhaustiveCases: IntInf.t) =
+                            toWord: 'a -> word): unit =
                      let
-                        val table = HashSet.new {hash = hash}
+                        val table = HashSet.new {hash = toWord}
                         val _ =
                            Vector.foreach
                            (cases, fn (x, _) =>
                             let
-                               val _ =
+                               val _ = 
                                   HashSet.insertIfNew
-                                  (table, hash x, fn y => equals (x, y),
-                                   fn () => x,
-                                   fn _ => Error.bug "Ssa.TypeCheck.loopTransfer: redundant branch in case")
+                                  (table, toWord x, fn y => equals (x, y),
+                                   fn () => x, 
+                                   fn _ => Error.bug "Ssa2.TypeCheck2.loopTransfer: redundant branch in case")
                             in
                                ()
                             end)
-                        val numCases = Int.toIntInf (Vector.length cases)
                      in
-                        case (IntInf.equals (numCases, numExhaustiveCases), isSome default) of
-                           (true, true) =>
-                              Error.bug "Ssa.TypeCheck.loopTransfer: exhaustive case has default"
-                         | (false, false) =>
-                              Error.bug "Ssa.TypeCheck.loopTransfer: non-exhaustive case has no default"
-                         | _ => ()
+                        if isSome default
+                           then ()
+                        else Error.bug "Ssa2.TypeCheck2.loopTransfer: case has no default"
                      end
-                  fun doitWord (ws, cases) =
-                     doit (cases, WordX.equals, WordX.hash, WordSize.cardinality ws)
                   fun doitCon cases =
                      let
-                        val numExhaustiveCases =
+                        val numCons = 
                            case Type.dest (getVar' test) of
-                              Type.Datatype t => Int.toIntInf (getTycon' t)
-                            | _ => Error.bug "Ssa.TypeCheck.loopTransfer: case test is not a datatype"
+                              Type.Datatype t => getTycon' t
+                            | _ => Error.bug (concat
+                                              ["Ssa2.TypeCheck2.loopTransfer: case test ",
+                                               Var.toString test,
+                                               " is not a datatype"])
+                        val cons = Array.array (numCons, false)
+                        val _ =
+                           Vector.foreach
+                           (cases, fn (con, _) =>
+                            let
+                               val i = getCon' con
+                            in
+                               if Array.sub (cons, i)
+                                  then Error.bug "Ssa2.TypeCheck2.loopTransfer: redundant branch in case"
+                               else Array.update (cons, i, true)
+                            end)
                      in
-                        doit (cases, Con.equals, Con.hash, numExhaustiveCases)
+                        case (Array.forall (cons, fn b => b), isSome default) of
+                           (true, true) =>
+                              Error.bug "Ssa2.TypeCheck2.loopTransfer: exhaustive case has default"
+                         | (false, false) =>
+                              Error.bug "Ssa2.TypeCheck2.loopTransfer: non-exhaustive case has no default"
+                         | _ => ()
                      end
                   val _ = getVar test
                   val _ =
                      case cases of
                         Cases.Con cs => doitCon cs 
-                      | Cases.Word (ws, cs) => doitWord (ws, cs)
+                      | Cases.Word (_, cs) =>
+                           doit (cs, WordX.equals, Word.fromIntInf o WordX.toIntInf)
                in
                   ()
                end
@@ -225,11 +240,11 @@ fun checkScopes (program as
       val _ = Vector.foreach
               (datatypes, fn Datatype.T {tycon, cons} =>
                (bindTycon (tycon, Vector.length cons)
-                ; Vector.foreach (cons, fn {con, ...} =>
-                                  bindCon con)))
+                ; Vector.foreachi (cons, fn (i, {con, ...}) => 
+                                   bindCon (con, i))))
       val _ = Vector.foreach
               (datatypes, fn Datatype.T {cons, ...} =>
-               Vector.foreach (cons, fn {args, ...} =>
+               Vector.foreach (cons, fn {args, ...} => 
                                Prod.foreach (args, loopType)))
       val _ = Vector.foreach (globals, loopStatement)
       val _ = List.foreach (functions, bindFunc o Function.name)

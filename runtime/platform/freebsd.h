@@ -29,17 +29,14 @@
 #include <utime.h>
 
 #define HAS_FEROUND TRUE
+#define HAS_FPCLASSIFY TRUE
 #define HAS_MSG_DONTWAIT TRUE
 #define HAS_REMAP FALSE
 #define HAS_SIGALTSTACK TRUE
+#define HAS_SIGNBIT TRUE
 #define HAS_SPAWN FALSE
 #define HAS_TIME_PROFILING TRUE
 
 #define MLton_Platform_OS_host "freebsd"
-
-/* This is probably debian specific, since freebsd worked w/o it before. */
-#if (defined (__FreeBSD_kernel__))
-#define getpgrp() getpgrp(getpid())
-#endif
 
 extern char **environ; /* for Posix_ProcEnv_environ */

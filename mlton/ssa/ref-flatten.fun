@@ -1,15 +1,16 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 2004-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2004-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
  * See the file MLton-LICENSE for details.
  *)
 
-functor RefFlatten (S: SSA2_TRANSFORM_STRUCTS): SSA2_TRANSFORM = 
+functor RefFlatten (S: REF_FLATTEN_STRUCTS): REF_FLATTEN =
 struct
 
 open S
+
+type int = Int.t
 
 structure Graph = DirectedGraph
 structure Node = Graph.Node
@@ -20,7 +21,7 @@ datatype z = datatype Transfer.t
 
 structure Finish =
    struct
-      datatype t = T of {flat: Type.t Prod.t option, 
+      datatype t = T of {flat: Type.t Prod.t option,
                          ty: Type.t}
 
       val _: t -> Layout.t =
@@ -81,7 +82,7 @@ structure Value =
             case v of
                GroundV t => Type.layout t
              | Complex e =>
-                  Equatable.layout 
+                  Equatable.layout
                   (e,
                    fn ObjectC ob => layoutObject ob
                     | WeakC {arg, ...} => seq [str "Weak ", layout arg])
@@ -213,7 +214,7 @@ structure Value =
                Equatable.equate
                (e, e', fn (c, c') =>
                 case (c, c') of
-                   (ObjectC (Obj {args = a, flat = f, ...}), 
+                   (ObjectC (Obj {args = a, flat = f, ...}),
                     ObjectC (Obj {args = a', flat = f', ...})) =>
                       let
                          val () = unifyProd (a, a')
@@ -292,7 +293,7 @@ structure VarInfo =
          end
    end
 
-fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
+fun flatten (program as Program.T {datatypes, functions, globals, main}) =
    let
       val {get = conValue: Con.t -> Value.t option ref, ...} =
          Property.get (Con.plist, Property.initFun (fn _ => ref NONE))
@@ -466,7 +467,7 @@ fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
              | MLton_size => dontFlatten ()
              | MLton_share => dontFlatten ()
              | Weak_get => deWeak (arg 0)
-             | Weak_new => 
+             | Weak_new =>
                   let val a = arg 0
                   in (Value.dontFlatten a; weak a)
                   end
@@ -492,7 +493,7 @@ fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
       fun update {base, offset, value} =
          (coerce {from = value,
                   to = select {base = base, offset = offset}}
-          (* Don't flatten the component of the update, 
+          (* Don't flatten the component of the update,
            * else sharing will be broken.
            *)
           ; Value.dontFlatten value)
@@ -620,8 +621,8 @@ fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
                       case Value.value (varValue var) of
                          Value.Ground _ => ()
                        | Value.Object obj => f (var, args, obj)
-                       | _ => 
-                            Error.bug 
+                       | _ =>
+                            Error.bug
                             "RefFlatten.foreachObject: Object with strange value")
                 | _ => ()
             val () = Vector.foreach (globals, loopStatement)
@@ -705,65 +706,6 @@ fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
        *)
       val {get = tyconSize: Tycon.t -> Size.t, ...} =
          Property.get (Tycon.plist, Property.initFun (fn _ => Size.new ()))
-      (* Force (mutually) recursive datatypes to top. *)
-      val {get = nodeTycon: unit Node.t -> Tycon.t, 
-           set = setNodeTycon, ...} =
-         Property.getSetOnce 
-         (Node.plist, Property.initRaise ("nodeTycon", Node.layout))
-      val {get = tyconNode: Tycon.t -> unit Node.t, 
-           set = setTyconNode, ...} =
-         Property.getSetOnce 
-         (Tycon.plist, Property.initRaise ("tyconNode", Tycon.layout))
-      val graph = Graph.new ()
-      val () =
-         Vector.foreach
-         (datatypes, fn Datatype.T {tycon, ...} =>
-          let
-             val node = Graph.newNode graph
-             val () = setTyconNode (tycon, node)
-             val () = setNodeTycon (node, tycon)
-          in 
-             ()
-          end)
-      val () =
-         Vector.foreach
-         (datatypes, fn Datatype.T {cons, tycon} =>
-          let
-             val n = tyconNode tycon
-             datatype z = datatype Type.dest
-             val {get = dependsOn, destroy = destroyDependsOn} =
-                Property.destGet
-                (Type.plist,
-                 Property.initRec
-                 (fn (t, dependsOn) =>
-                  case Type.dest t of
-                     Datatype tc =>
-                        (ignore o Graph.addEdge)
-                        (graph, {from = n, to = tyconNode tc})
-                   | Object {args, ...} =>
-                        Prod.foreach (args, dependsOn)
-                   | _ => ()))
-             val () = Vector.foreach (cons, fn {args, ...} =>
-                                      Prod.foreach (args, dependsOn))
-             val () = destroyDependsOn ()
-          in
-             ()
-          end)
-      val () =
-         List.foreach
-         (Graph.stronglyConnectedComponents graph, fn ns =>
-          let
-             fun doit () =
-                List.foreach
-                (ns, fn n =>
-                 Size.makeTop (tyconSize (nodeTycon n)))
-          in
-             case ns of
-                [n] => if Node.hasEdge {from = n, to = n}
-                          then doit ()
-                       else ()
-              | _ => doit ()
-          end)
       val {get = typeSize: Type.t -> Size.t, ...} =
          Property.get (Type.plist,
                        Property.initRec
@@ -786,6 +728,7 @@ fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
                                | Thread => Size.makeTop s
                                | Weak _ => ()
                                | Word _ => ()
+                           val () = if Type.isVector t then Size.makeTop s else ()
                         in
                            s
                         end))
@@ -794,11 +737,94 @@ fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
          (datatypes, fn Datatype.T {cons, tycon} =>
           let
              val s = tyconSize tycon
-             fun dependsOn (t: Type.t): unit = Size.<= (typeSize t, s)
+             (* XXX KC : What is this for? *)
+             fun dependsOn (t: Type.t): unit =
+                 let
+                   datatype z = datatype Type.dest
+                   val () = case Type.dest t of
+                              Datatype tycon' => if Tycon.equals (tycon, tycon')
+                                                 then Size.makeTop s
+                                                 else ()
+                            | _ => ()
+                 in
+                   Size.<= (typeSize t, s)
+                 end
              val () = Vector.foreach (cons, fn {args, ...} =>
                                       Prod.foreach (args, dependsOn))
           in
              ()
+          end)
+      (* Force (mutually) recursive datatypes to top. *)
+      val {get = nodeTycon: unit Node.t -> Tycon.t,
+           set = setNodeTycon, ...} =
+         Property.getSetOnce
+         (Node.plist, Property.initRaise ("nodeTycon", Node.layout))
+      val {get = tyconNode: Tycon.t -> unit Node.t,
+           set = setTyconNode, ...} =
+         Property.getSetOnce
+         (Tycon.plist, Property.initRaise ("tyconNode", Tycon.layout))
+      val graph = Graph.new ()
+      val () =
+         Vector.foreach
+         (datatypes, fn Datatype.T {tycon, ...} =>
+          let
+             val node = Graph.newNode graph
+             val () = setTyconNode (tycon, node)
+             val () = setNodeTycon (node, tycon)
+          in
+             ()
+          end)
+      val () =
+         Vector.foreach
+         (datatypes, fn Datatype.T {cons, tycon} =>
+          let
+             val n = tyconNode tycon
+             fun dependsOn (t: Type.t): unit =
+                let
+                   datatype z = datatype Type.dest
+                   fun loop t =
+                      case Type.dest t of
+                         CPointer => ()
+                       | Datatype tc =>
+                            let
+                               val m = tyconNode tc
+                               val e = {from = n, to = m}
+                            in
+                               (* Avoid redundant edges. *)
+                               if Node.hasEdge e then ()
+                               else
+                                  (ignore o Graph.addEdge)
+                                  (graph, {from = n, to = tyconNode tc})
+                            end
+                       | IntInf => ()
+                       | Object {args, ...} =>
+                            Prod.foreach (args, loop)
+                       | Real _ => ()
+                       | Thread => ()
+                       | Weak _ => ()
+                       | Word _ => ()
+                in
+                   loop t
+                end
+             val () = Vector.foreach (cons, fn {args, ...} =>
+                                      Prod.foreach (args, dependsOn))
+          in
+             ()
+          end)
+      val () =
+         List.foreach
+         (Graph.stronglyConnectedComponents graph, fn ns =>
+          let
+             fun doit () =
+                List.foreach
+                (ns, fn n =>
+                 Size.makeTop (tyconSize (nodeTycon n)))
+          in
+             case ns of
+                [n] => if Node.hasEdge {from = n, to = n}
+                          then doit ()
+                       else ()
+              | _ => doit ()
           end)
       fun typeIsLarge (t: Type.t): bool =
          Size.isTop (typeSize t)
@@ -887,7 +913,7 @@ fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
           end)
       (* Conversion from values to types. *)
       datatype z = datatype Finish.t
-      val traceValueType = 
+      val traceValueType =
          Trace.trace ("RefFlatten.valueType", Value.layout, Type.layout)
       fun valueType arg: Type.t =
          traceValueType
@@ -910,7 +936,7 @@ fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
             (Prod.dest args, [], fn ({elt, isMutable = i}, ac) =>
              case Value.deFlat {inner = elt, outer = obj} of
                 NONE => {elt = valueType elt, isMutable = i} :: ac
-              | SOME z => 
+              | SOME z =>
                    Vector.foldr
                    (Prod.dest (objectFinalComponents z), ac,
                     fn ({elt, isMutable = i'}, ac) =>
@@ -957,7 +983,7 @@ fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
          Vector.foldri
          (Prod.dest args, ac, fn (i, {elt, ...}, ac) =>
           case Value.deFlat {inner = elt, outer = obj} of
-             NONE => 
+             NONE =>
                 let
                    val var = Var.newNoname ()
                    val () =
@@ -1037,7 +1063,7 @@ fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
                              Base.Object object =>
                                 (case varObject object of
                                     NONE => make exp
-                                  | SOME obj => 
+                                  | SOME obj =>
                                        make
                                        (if isSome (Value.deFlat
                                                    {inner = varValue var,
@@ -1100,7 +1126,7 @@ fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
                     val args =
                        case ! (conValue con) of
                           NONE => args
-                        | SOME v => 
+                        | SOME v =>
                              case Type.dest (valueType v) of
                                 Type.Object {args, ...} => args
                               | _ => Error.bug "RefFlatten.datatypes: strange con"

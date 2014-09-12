@@ -1,11 +1,12 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
  * MLton is released under a BSD-style license.
  * See the file MLton-LICENSE for details.
  *)
+
+type int = Int.t
 
 signature X86_MLTON_BASIC_STRUCTS =
   sig
@@ -86,8 +87,8 @@ signature X86_MLTON_BASIC =
     val globalOffsetTableContents : x86.MemLoc.t
 
     (* Static temps defined in x86-main.h *)
-    val applyFFTempFunContentsOperand : x86.Operand.t
-    val applyFFTempArgContentsOperand : x86.Operand.t
+    val applyFFTempContentsOperand : x86.Operand.t
+    val applyFFTemp2ContentsOperand : x86.Operand.t
     val realTemp1ContentsOperand : x86.Size.t -> x86.Operand.t
     val realTemp2ContentsOperand : x86.Size.t -> x86.Operand.t
     val realTemp3ContentsOperand : x86.Size.t -> x86.Operand.t
@@ -99,6 +100,11 @@ signature X86_MLTON_BASIC =
     val local_base : x86.CType.t -> x86.Label.t
     val global_base : x86.CType.t -> x86.Label.t
     val globalObjptrNonRoot_base : x86.Label.t
+
+    (* Misc. *)
+    val fileNameLabel : x86.Label.t
+    val fileName : x86.Operand.t
+    val fileLine : unit -> x86.Operand.t
 
     (* gcState relative locations defined in gc.h *)
     val gcState_label: x86.Label.t

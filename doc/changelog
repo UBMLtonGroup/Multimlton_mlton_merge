@@ -1,285 +1,9 @@
-Here are the changes from version 20130715 to version YYYYMMDD.
-
-* 2014-07-01
-   - Merged Brian Leibig's llvm code generator.
-
---------------------------------------------------------------------------------
-
-Here are the changes from version 20100608 to version 20130715.
-
-Summary:
-  + Compiler.
-   o Cosmetic improvements to type-error messages.
-   o Removed features:
-    * Bytecode codegen: The bytecode codegen had not seen significant
-        use and it was not well understood by any of the active
-        developers.
-    * Support for .cm files as input: The ML Basis system provides
-        much better infrastructure for "programming in the very large"
-        than the (very) limited support for CM.  The cm2mlb tool
-        (available in the source distribution) can be used to convert
-        CM projects to MLB projects, preserving the CM scoping of
-        module identifiers.
-   o Bug fixes: see changelog
-  + Runtime.
-   o Bug fixes: see changelog
-  + Language.
-   o Interpret (*#line line:col "file" *) directives as relative file
-       names.
-   o ML Basis annotations.
-    * Added: resolveScope
-  + Libraries.
-   o Basis Library.
-    * Improved performance of String.concatWith.
-    * Use bit operations for REAL.class and other low-level operations.
-    * Support additional variables with Posix.ProcEnv.sysconf.
-    * Bug fixes: see changelog
-   o MLton structure.
-    * Removed: MLton.Socket
-   o Other libraries.
-    * Updated: ckit library, MLRISC library, SML/NJ library
-    * Added: MLLPT library
-  + Tools.
-   o mllex
-    * Generate (*#line line:col "file.lex" *) directives with simple
-        (relative) file names, rather than absolute paths.
-   o mlyacc
-    * Generate `(*#line line:col "file.grm" *)` directives with simple
-        (relative) file names, rather than absolute paths.
-    * Fixed bug in comment-handling in lexer.
-
-* 2013-07-06
-   - Update SML/NJ libraries to SML/NJ 110.76.
-
-* 2013-06-19
-   - Upgrade gdtoa.tgz; fixed bug in
-     'Real32.{fmt,toDecimal,toString}', which in some cases produced
-     too many digits
-
-* 2013-06-18
-   - Removed MLton.Socket structure (deprecated in last release).
-
-* 2013-06-10
-   - Improved performance of String.concatWith.
-
-* 2013-05-22
-   - Update SML/NJ libraries to SML/NJ 110.75.
-
-* 2013-04-30
-   - Detect PowerPC 64 architecture.
-
-* 2012-10-09
-   - Fixed bug in elaboration that erroneously accepted the following:
-         signature S = sig structure A : sig type t end
-                                 and B : sig type t end where type t = A.t end
-
-* 2012-09-04
-   - Introduce an MLB annotation to control overload and flex record
-     resolution scope: "resolveScope {strdec|dec|topdec|program}".
-
-* 2012-07-04
-   - Simplify use of 'getsockopt' and 'setsockopt'in Basis Library.
-   - Direct implementation of Socket.Ctl.{getATMARK,getNREAD} in
-     runtime system, rather than indirect implementation in Basis
-     Library via 'ioctl'.
-   - Replace use of casting through a union with memcpy in runtime.
-
-* 2012-06-11
-   - Use bit operations for REAL.class and other low-level operations.
-   - Fixed bugs in REAL.copySign, REAL.signBit, and REAL.{to,from}Decimal.
-
-* 2012-06-01
-   - Cosmetic improvements to type-error messages.
-   - Fixed bug in elaboration that erroneously rejected the following:
-	 datatype ('a, ''a) t = T
-	 type ('a, ''a) u = unit
-     and erroneously accepted the following:
-	 fun f (x: 'a) : ''a = x
-	 fun g (x: 'a) : ''a = if x = x then x else x
-
-* 2012-02-24
-   - Fixed bug in redundant SSA optimization.
-
-* 2011-06-20
-   - Support additional variables with Posix.ProcEnv.sysconf.
-
-* 2011-06-17
-   - Change mllex and mlyacc to generate #line directives with simple
-     file names, rather than absolute paths.
-   - Interpret "#line" directives as relative file names.
-
-* 2011-06-14
-   - Fixed bug in SSA/SSA2 shrinker that could erroneously turn a
-     non-tail function call with a Bug transfer as its continuation
-     into a tail function call.
-
-* 2011-06-11
-   - Update SML/NJ libraries to SML/NJ 110.73 and add ML-LPT library.
-
-* 2011-06-10
-   - Fixed bug in translation from SSA2 to RSSA with case expressions
-     over non-primitive-sized words.
-   - Fixed bug in SSA/SSA2 type checking of case expressions over
-     words.
-
-* 2011-06-04
-   - Upgrade gdtoa.tgz.
-   - Remove bytecode codegen.
-   - Remove support for .cm files as input.
-
-* 2011-05-03
-   - Fixed a bug with the treatment of as-patterns, which should not
-     allow the redefinition of constructor status.
-
-* 2011-02-18
-   - Fixed bug with treatment of nan in common subexpression
-     elimination SSA optimization.
-
-* 2011-02-18
-   - Fixed bug in translation from SSA2 to RSSA with weak pointers.
-
-* 2011-02-05
-   - Fixed bug in amd64 codegen calling convention for varargs C calls.
-
-* 2011-01-17
-   - Fixed bug in comment-handling in lexer for mlyacc's input language.
-
-* 2010-06-22
-   - Fixed bug in elaboration of function clauses with different numbers
-     of arguments that would raise an uncaught Subscript exception.
-
---------------------------------------------------------------------------------
-
-Here are the changes from version 20070826 to version 20100608.
-
-Summary:
-  + New platforms.
-   o ia64-hpux
-   o powerpc64-aix
-  + Compiler.
-   o Command-line switches.
-    * Added: -mlb-path-var '<name> <value>'
-    * Removed: -keep sml, -stop sml
-   o Improved constant folding of floating-point operations.
-   o Experimental: Support for compiling to a C library; see wiki
-       documentation.
-   o Extended -show-def-use output to include types of variable
-       definitions.
-   o Deprecated features (to be removed in a future release)
-    * Bytecode codegen: The bytecode codegen has not seen significant
-        use and it is not well understood by any of the active
-        developers.
-    * Support for .cm files as input: The ML Basis system provides
-        much better infrastructure for "programming in the very large"
-        than the (very) limited support for CM.  The cm2mlb tool
-        (available in the source distribution) can be used to convert
-        CM projects to MLB projects, preserving the CM scoping of
-        module identifiers.
-   o Bug fixes: see changelog
-  + Runtime.
-   o @MLton switches.
-    * Added: may-page-heap {false|true}
-   o may-page-heap: By default, MLton will not page the heap to disk
-       when unable to grow the heap to accomodate an allocation.
-       (Previously, this behavior was the default, with no means to
-       disable, with security an least-surprise issues.)
-   o Bug fixes: see changelog
-  + Language.
-   o Allow numeric characters in ML Basis path variables.
-  + Libraries.
-   o Basis Library.
-    * Bug fixes: see changelog.
-   o MLton structure.
-    * Added: MLton.equal, MLton.hash, MLton.Cont.isolate,
-        MLton.GC.Statistics, MLton.Pointer.sizeofPointer,
-        MLton.Socket.Address.toVector
-    * Changed:
-    * Deprecated: MLton.Socket
-   o Unsafe structure.
-    * Added versions of all of the monomorphic array and vector
-      structures.
-   o Other libraries.
-    * Updated: ckit library, MLRISC library, SML/NJ library.
-  + Tools.
-   o mllex
-    * Eliminated top-level 'type int = Int.int' in output.
-    * Include (*#line line:col "file.lex" *) directives in output.
-    * Added %posint command, to set the yypos type and allow the
-      lexing of multi-gigabyte files.
-   o mlnlffigen
-    * Added command-line switches -linkage archive and -linkage shared.
-    * Deprecated command-line switch -linkage static.
-    * Added support for ia64 and hppa targets.
-   o mlyacc
-    * Eliminated top-level 'type int = Int.int' in output.
-    * Include (*#line line:col "file.grm" *) directives in output.
-
-* 2010-05-12
-   - Fixed bug in the mark-compact garbage collector where the C
-     library's memcpy was used to move objects during the compaction
-     phase; this could lead to heap corruption and segmentation faults
-     with newer versions of gcc and/or glibc, which assume that src and
-     dst in a memcpy do not overlap.
-
-* 2010-03-12
-   - Fixed bug in elaboration of datatype declarations with withtype
-     bindings.
-
-* 2009-12-11
-   - Fixed performance bug in ref flatten SSA2 optimization.
-
-* 2009-12-09
-   - Fixed performance bug in simplify types SSA optimization.
-
-* 2009-12-02
-   - Fixed bug in amd64 codegen register allocation of indirect C calls.
-
-* 2009-09-17
-   - Fixed bug in IntInf.scan and IntInf.fromString where leading
-     spaces were only accepted if the stream had an explicit sign
-     character.
-
-* 2009-07-10
-   - Added combine conversions SSA optimization.
-
-* 2009-06-09
-   - Removed deprecated command line switch -show-anns {false, true}.
-
-* 2009-04-18
-   - Removed command line switches -keep sml and -stop sml.  Their
-     meaning was unclear with .mlb files; their effect with .cm files
-     can be achieved with -stop f.
-
-* 2009-04-16
-   - Fixed bug in IntInf.~>> that could cause a glibc assertion
-     failure.
-
-* 2009-04-01
-   - Fixed exported type of MLton.Process.reap.
-
-* 2009-01-27
-   - Added MLton.Socket.Address.toVector to get the network-byte-order
-     representation of an IP address.
-
-* 2008-11-10
-   - Fixed bug in MLton.size and MLton.share when tracing the current
-     stack.
+Here are the changes from version 20070826 to version YYYYMMDD.
 
 * 2008-10-27
    - Fixed phantom typing of sockets by hiding the representation of socket
      types.  Previously the representation of sockets was revealed rendering
      the phantom types useless.
-
-* 2008-10-10
-   - Fixed bug in nexted _export/_import functions.
-
-* 2008-09-12
-   - Improved constant folding of floating point operations.
-
-* 2008-08-20
-   - Store the card/cross map at the end of the allocated ML heap;
-     avoids possible out of memory errors when resizing the ML heap
-     cannot be followed by a card/cross map allocation.
 
 * 2008-07-24
    - Added support for compiling to a C library. The relevant new compiler
@@ -295,9 +19,6 @@ Summary:
    - Fixed bug in the name mangling of _import-ed functions with the
      stdcall convention.
 
-* 2008-06-12
-   - Added MLton.Pointer.sizeofPointer.
-
 * 2008-06-06
    - Added expert command line switch -emit-main {true|false}.
 
@@ -305,9 +26,6 @@ Summary:
    - Fixed bug in Windows code to page the heap to disk when unable to
      grow the heap to a desired size.
      Thanks to Sami Evangelista for the bug report.
-
-* 2008-05-10
-   - Implemented MLton.Cont.isolate.
 
 * 2008-04-20
    - Fixed bug in *NIX code to page the heap to disk when unable to
@@ -326,10 +44,6 @@ Summary:
      OS.IO.iodesc, Posix.IO.file_desc, Posix.Signal.signal,
      Socket.sock, Socket.SOGK.sock_type as integers were exposed.
 
-* 2008-03-14
-   - Added unsafe versions of all of the monomorphic array and vector
-     structures.
-
 * 2008-03-02
    - Fixed bug in Basis Library where the representation of
      OS.Process.status as an integer was exposed.
@@ -339,14 +53,6 @@ Summary:
      data structure. Thanks to Daniel Spoonhower for the bug report
      and initial diagnosis and patch.
 
-* 2008-01-25
-   - Various updates to GC statistics gathering.  Some basic GC
-     statistics can be accessed from SML by MLton.GC.Statistics.*
-     functions.
-
-* 2008-01-24
-   - Added primitive (structural) polymorphic hash.
-
 * 2008-01-21
    - Fixed frontend to accept "op longvid" patterns and expressions.
      Thanks to Florian Weimer for the bug report.
@@ -354,10 +60,6 @@ Summary:
 * 2008-01-17
    - Extended -show-def-use output to include types of variable
      definitions.
-
-* 2008-01-09
-   - Extended MLton_equal to be a structural equality on all types,
-     including real and -> types.
 
 * 2007-12-18
    - Changed ML-Yacc and ML-Lex to output line directives so that
@@ -414,9 +116,6 @@ Summary:
 * 2007-11-07
    - Added command-line switch -mlb-path-var '<name> <value>' for
      specifying MLB path variables.
-
-* 2007-11-06
-  - Allow numeric characters in MLB path variables.
 
 * 2007-09-20
    - Fixed bug in elaboration of structures with signature

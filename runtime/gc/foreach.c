@@ -12,8 +12,8 @@ void callIfIsObjptr (GC_state s, GC_foreachObjptrFun f, objptr *opp) {
 }
 
 /* foreachGlobalObjptr (s, f)
- * 
- * Apply f to each global object pointer into the heap. 
+ *
+ * Apply f to each global object pointer into the heap.
  */
 void foreachGlobalObjptr (GC_state s, GC_foreachObjptrFun f) {
   for (unsigned int i = 0; i < s->globalsLength; ++i) {
@@ -23,15 +23,31 @@ void foreachGlobalObjptr (GC_state s, GC_foreachObjptrFun f) {
   }
   if (DEBUG_DETAILED)
     fprintf (stderr, "foreachGlobal threads\n");
-  callIfIsObjptr (s, f, &s->callFromCHandlerThread);
-  callIfIsObjptr (s, f, &s->currentThread);
-  callIfIsObjptr (s, f, &s->savedThread);
-  callIfIsObjptr (s, f, &s->signalHandlerThread);
+  if (s->procStates) {
+    for (int proc = 0; proc < s->numberOfProcs; proc++) {
+      callIfIsObjptr (s, f, &s->procStates[proc].callFromCHandlerThread);
+      callIfIsObjptr (s, f, &s->procStates[proc].currentThread);
+      callIfIsObjptr (s, f, &s->procStates[proc].savedThread);
+      callIfIsObjptr (s, f, &s->procStates[proc].signalHandlerThread);
+
+      if (s->procStates[proc].roots) {
+        for (uint32_t i = 0; i < s->procStates[proc].rootsLength; i++) {
+          callIfIsObjptr (s, f, &s->procStates[proc].roots[i]);
+        }
+      }
+    }
+  }
+  else {
+    callIfIsObjptr (s, f, &s->callFromCHandlerThread);
+    callIfIsObjptr (s, f, &s->currentThread);
+    callIfIsObjptr (s, f, &s->savedThread);
+    callIfIsObjptr (s, f, &s->signalHandlerThread);
+  }
 }
 
 
-/* foreachObjptrInObject (s, p, f, skipWeaks) 
- * 
+/* foreachObjptrInObject (s, p, f, skipWeaks)
+ *
  * Applies f to each object pointer in the object pointed to by p.
  * Returns pointer to the end of object, i.e. just past object.
  *
@@ -47,13 +63,13 @@ pointer foreachObjptrInObject (GC_state s, pointer p,
   header = getHeader (p);
   splitHeader(s, header, &tag, NULL, &bytesNonObjptrs, &numObjptrs);
   if (DEBUG_DETAILED)
-    fprintf (stderr, 
+    fprintf (stderr,
              "foreachObjptrInObject ("FMTPTR")"
              "  header = "FMTHDR
              "  tag = %s"
              "  bytesNonObjptrs = %d"
-             "  numObjptrs = %d\n", 
-             (uintptr_t)p, header, objectTypeTagToString (tag), 
+             "  numObjptrs = %d\n",
+             (uintptr_t)p, header, objectTypeTagToString (tag),
              bytesNonObjptrs, numObjptrs);
   if (NORMAL_TAG == tag) {
     p += bytesNonObjptrs;
@@ -61,7 +77,7 @@ pointer foreachObjptrInObject (GC_state s, pointer p,
     /* Apply f to all internal pointers. */
     for ( ; p < max; p += OBJPTR_SIZE) {
       if (DEBUG_DETAILED)
-        fprintf (stderr, 
+        fprintf (stderr,
                  "  p = "FMTPTR"  *p = "FMTOBJPTR"\n",
                  (uintptr_t)p, *(objptr*)p);
       callIfIsObjptr (s, f, (objptr*)p);
@@ -110,7 +126,7 @@ pointer foreachObjptrInObject (GC_state s, pointer p,
           p += bytesNonObjptrs;
           next = p + bytesObjptrs;
           /* For each internal pointer. */
-          for ( ; p < next; p += OBJPTR_SIZE) 
+          for ( ; p < next; p += OBJPTR_SIZE)
             callIfIsObjptr (s, f, (objptr*)p);
         }
       }
@@ -118,17 +134,16 @@ pointer foreachObjptrInObject (GC_state s, pointer p,
       p -= dataBytes;
     }
     p += alignWithExtra (s, dataBytes, GC_ARRAY_HEADER_SIZE);
-  } else { /* stack */
-    GC_stack stack; 
-    pointer top, bottom; 
+  } else if (STACK_TAG == tag) {
+    GC_stack stack;
+    pointer top, bottom;
     unsigned int i;
-    GC_returnAddress returnAddress; 
+    GC_returnAddress returnAddress;
     GC_frameLayout frameLayout;
     GC_frameOffsets frameOffsets;
 
-    assert (STACK_TAG == tag);
     stack = (GC_stack)p;
-    bottom = getStackBottom (s, stack); 
+    bottom = getStackBottom (s, stack);
     top = getStackTop (s, stack);
     if (DEBUG) {
       fprintf (stderr, "  bottom = "FMTPTR"  top = "FMTPTR"\n",
@@ -155,6 +170,18 @@ pointer foreachObjptrInObject (GC_state s, pointer p,
     assert(top == bottom);
     p += sizeof (struct GC_stack) + stack->reserved;
   }
+  else if (HEADER_ONLY_TAG == tag) {
+  }
+  else if (FILL_TAG == tag) {
+    GC_smallGapSize bytes;
+    bytes = *((GC_smallGapSize *)p);
+    p += GC_SMALL_GAP_SIZE_SIZE;
+    p += bytes;
+  }
+  else {
+    assert (0 and "unknown object tag type");
+  }
+
   return p;
 }
 
@@ -176,7 +203,7 @@ pointer foreachObjptrInRange (GC_state s, pointer front, pointer *back,
 
   assert (isFrontierAligned (s, front));
   if (DEBUG_DETAILED)
-    fprintf (stderr, 
+    fprintf (stderr,
              "foreachObjptrInRange  front = "FMTPTR"  *back = "FMTPTR"\n",
              (uintptr_t)front, (uintptr_t)(*back));
   b = *back;
@@ -185,7 +212,7 @@ pointer foreachObjptrInRange (GC_state s, pointer front, pointer *back,
     while (front < b) {
       assert (isAligned ((size_t)front, GC_MODEL_MINALIGN));
       if (DEBUG_DETAILED)
-        fprintf (stderr, 
+        fprintf (stderr,
                  "  front = "FMTPTR"  *back = "FMTPTR"\n",
                  (uintptr_t)front, (uintptr_t)(*back));
       pointer p = advanceToObjectData (s, front);
@@ -206,25 +233,27 @@ void foreachStackFrame (GC_state s, GC_foreachStackFrameFun f) {
   GC_returnAddress returnAddress;
   pointer top;
 
-  if (DEBUG_PROFILE)
+  if (DEBUG_PROFILE or DEBUG_SPLICE)
     fprintf (stderr, "foreachStackFrame\n");
   bottom = getStackBottom (s, getStackCurrent(s));
-  if (DEBUG_PROFILE)
+  if (DEBUG_PROFILE or DEBUG_SPLICE)
     fprintf (stderr, "  bottom = "FMTPTR"  top = "FMTPTR".\n",
              (uintptr_t)bottom, (uintptr_t)s->stackTop);
   for (top = s->stackTop; top > bottom; top -= layout->size) {
     returnAddress = *((GC_returnAddress*)(top - GC_RETURNADDRESS_SIZE));
     findex = getFrameIndexFromReturnAddress (s, returnAddress);
-    if (DEBUG_PROFILE)
-      fprintf (stderr, "top = "FMTPTR"  findex = "FMTFI"\n",
+    if (DEBUG_PROFILE or DEBUG_SPLICE)
+      fprintf (stderr, "top = "FMTPTR"  findex = "FMTFI"\t",
                (uintptr_t)top, findex);
     unless (findex < s->frameLayoutsLength)
       die ("top = "FMTPTR"  returnAddress = "FMTRA"  findex = "FMTFI"\n",
            (uintptr_t)top, (uintptr_t)returnAddress, findex);
     f (s, findex);
     layout = &(s->frameLayouts[findex]);
+    if (DEBUG_SPLICE)
+        fprintf (stderr, "size = %d\n", layout->size);
     assert (layout->size > 0);
   }
-  if (DEBUG_PROFILE)
+  if (DEBUG_PROFILE or DEBUG_SPLICE)
     fprintf (stderr, "done foreachStackFrame\n");
 }

@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -175,20 +174,20 @@ struct
                     size = pointerSize,
                     class = Classes.StaticNonTemp}
   
-  val applyFFTempFun = Label.fromString "applyFFTempFun"
-  val applyFFTempFunContents
-    = makeContents {base = Immediate.label applyFFTempFun,
+  val applyFFTemp = Label.fromString "applyFFTemp"
+  val applyFFTempContents 
+    = makeContents {base = Immediate.label applyFFTemp,
                     size = wordSize,
                     class = Classes.StaticTemp}
-  val applyFFTempFunContentsOperand
-    = Operand.memloc applyFFTempFunContents
-  val applyFFTempArg = Label.fromString "applyFFTempArg"
-  val applyFFTempArgContents
-    = makeContents {base = Immediate.label applyFFTempArg,
+  val applyFFTempContentsOperand
+    = Operand.memloc applyFFTempContents
+  val applyFFTemp2 = Label.fromString "applyFFTemp2"
+  val applyFFTemp2Contents 
+    = makeContents {base = Immediate.label applyFFTemp2,
                     size = wordSize,
                     class = Classes.StaticTemp}
-  val applyFFTempArgContentsOperand
-    = Operand.memloc applyFFTempArgContents
+  val applyFFTemp2ContentsOperand
+    = Operand.memloc applyFFTemp2Contents
 
   val realTemp1D = Label.fromString "realTemp1D"
   val realTemp1ContentsD
@@ -323,6 +322,32 @@ struct
   end
 
   val globalObjptrNonRoot_base = Label.fromString "globalObjptrNonRoot"
+
+  val fileNameLabel = Label.fromString "fileName"
+  val fileName = Operand.immediate_label fileNameLabel
+  (* This is a hack: The line number needs to be pushed, but the actual
+   *  call to GC_collect is about 9 lines further (push 4 more arguments,
+   *  adjust stackTop, save return label,
+   *  save gcState.frontier and gcState.stackTop, make call).
+   * However, there are probably cases where this is different.
+   *
+   * We also have another hack because on some platforms, Label.toString appends
+   * an _ to the beginning of each label.
+   *
+   * Make it a label (not an immediate) so that it doesn't get PIC-ified.
+   *)
+  val fileLineLabel =
+     Promise.lazy (fn () => Label.fromString (if !Control.labelsHaveExtra_
+                                                 then "_LINE__+9"
+                                              else "__LINE__+9"))
+
+  (* When debugging, the assembly file is not passed through cpp,
+   * so use an dummy value (zero).
+   *)
+  val fileLine
+    = fn () => if !Control.debug
+                 then Operand.immediate (Immediate.zero)
+                 else Operand.label (fileLineLabel ())
 
   val gcState_label = Label.fromString "gcState"
 

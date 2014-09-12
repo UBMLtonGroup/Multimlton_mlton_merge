@@ -5,14 +5,14 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor CPSTransform (S: XML_TRANSFORM_STRUCTS): XML_TRANSFORM = 
+functor CPSTransform (S: CPS_TRANSFORM_STRUCTS): CPS_TRANSFORM = 
 struct
 
 open S
 datatype z = datatype Dec.t
 datatype z = datatype PrimExp.t
 
-fun transform (prog: Program.t): Program.t =
+fun doit (prog: Program.t): Program.t =
    let
       val Program.T {datatypes, body, overflow} = prog
 

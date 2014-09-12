@@ -58,6 +58,7 @@ typedef GC_state GCState_t;
 #include "gc/signals.h"
 #include "gc/handler.h"
 #include "gc/switch-thread.h"
+#include "gc/threadlet.h"
 #include "gc/garbage-collection.h"
 #include "gc/new-object.h"
 #include "gc/array-allocate.h"
@@ -74,5 +75,7 @@ typedef GC_state GCState_t;
 #include "gc/pack.h"
 #include "gc/size.h"
 #include "gc/share.h"
+#include "gc/parallel.h"
+#include "gc/processor.h"
 
 #endif /* _MLTON_GC_H_ */

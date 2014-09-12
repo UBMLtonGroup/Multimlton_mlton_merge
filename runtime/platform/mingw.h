@@ -7,7 +7,6 @@
 #include <stdint.h>
 
 #include <unistd.h>
-#include <winsock2.h>
 #include <windows.h>
 
 #include <dirent.h>
@@ -24,6 +23,7 @@
 #include <lm.h>
 #include <process.h>
 //#include <psapi.h>
+#include <winsock2.h>
 #include <ws2tcpip.h>
 #include <psapi.h>
 
@@ -31,9 +31,16 @@
 
 // As of 20080807, MinGW has a broken fesetround. Use the runtime's.
 #define HAS_FEROUND FALSE
-#define HAS_MSG_DONTWAIT FALSE
+// As of 20051104, MinGW has fpclassify, but it is broken.  In particular, it
+// classifies subnormals as normals.  So, we disable it here, which causes the
+// runtime to use our own version.
+#define HAS_FPCLASSIFY FALSE
+#define HAS_FPCLASSIFY32 FALSE
+#define HAS_FPCLASSIFY64 FALSE
+#define HAS_MSG_DONTWAIT TRUE
 #define HAS_REMAP TRUE
 #define HAS_SIGALTSTACK FALSE
+#define HAS_SIGNBIT TRUE
 #define HAS_SPAWN TRUE
 #define HAS_TIME_PROFILING TRUE
 
@@ -357,189 +364,16 @@ MLTON_WRAPPER int MLton_poll (struct pollfd *ufds, nfds_t nfds, int timeout);
 /*                    Posix.Error                    */
 /* ------------------------------------------------- */
 
-/* We cannot yet replace strerror at the time util.c is built */
-#ifndef MLTON_UTIL
-MLTON_WRAPPER char *MLton_strerror(int code);
-#undef strerror
-#define strerror MLton_strerror
-#endif
-
-/* If MinGW doesn't (currently) define an error status we need, but winsock
- * does, then default to using the winsock status. They will not conflict.
- */
-
-#ifndef EINTR
-#define EINTR WSAEINTR
-#endif
-
-#ifndef EBADF
-#define EBADF WSAEBADF
-#endif
-
-#ifndef EACCES
-#define EACCES WSAEACCES
-#endif
-
-#ifndef EFAULT
-#define EFAULT WSAEFAULT
-#endif
-
-#ifndef EINVAL
-#define EINVAL WSAEINVAL
-#endif
-
-#ifndef EMFILE
-#define EMFILE WSAEMFILE
-#endif
-
-#ifndef EAGAIN
-#define EAGAIN WSAEWOULDBLOCK
-#endif
-
-#ifndef EWOULDBLOCK
-#define EWOULDBLOCK EAGAIN
-#endif
-
 #ifndef EINPROGRESS
 #define EINPROGRESS WSAEINPROGRESS
-#endif
-
-#ifndef EALREADY
-#define EALREADY WSAEALREADY
-#endif
-
-#ifndef ENOTSOCK
-#define ENOTSOCK WSAENOTSOCK
-#endif
-
-#ifndef EDESTADDRREQ
-#define EDESTADDRREQ WSAEDESTADDRREQ
 #endif
 
 #ifndef EMSGSIZE
 #define EMSGSIZE WSAEMSGSIZE
 #endif
 
-#ifndef EPROTOTYPE
-#define EPROTOTYPE WSAEPROTOTYPE
-#endif
-
-#ifndef ENOPROTOOPT
-#define ENOPROTOOPT WSAENOPROTOOPT
-#endif
-
-#ifndef EPROTONOSUPPORT
-#define EPROTONOSUPPORT WSAEPROTONOSUPPORT
-#endif
-
-#ifndef ESOCKTNOSUPPORT
-#define ESOCKTNOSUPPORT WSAESOCKTNOSUPPORT
-#endif
-
-#ifndef EOPNOTSUPP
-#define EOPNOTSUPP WSAEOPNOTSUPP
-#endif
-
-#ifndef EPFNOSUPPORT
-#define EPFNOSUPPORT WSAEPFNOSUPPORT
-#endif
-
-#ifndef EAFNOSUPPORT
-#define EAFNOSUPPORT WSAEAFNOSUPPORT
-#endif
-
-#ifndef EADDRINUSE
-#define EADDRINUSE WSAEADDRINUSE
-#endif
-
-#ifndef EADDRNOTAVAIL
-#define EADDRNOTAVAIL WSAEADDRNOTAVAIL
-#endif
-
-#ifndef ENETDOWN
-#define ENETDOWN WSAENETDOWN
-#endif
-
-#ifndef ENETUNREACH
-#define ENETUNREACH WSAENETUNREACH
-#endif
-
-#ifndef ENETRESET
-#define ENETRESET WSAENETRESET
-#endif
-
-#ifndef ECONNABORTED
-#define ECONNABORTED WSAECONNABORTED
-#endif
-
-#ifndef ECONNRESET
-#define ECONNRESET WSAECONNRESET
-#endif
-
-#ifndef ENOBUFS
-#define ENOBUFS WSAENOBUFS
-#endif
-
-#ifndef EISCONN
-#define EISCONN WSAEISCONN
-#endif
-
-#ifndef ENOTCONN
-#define ENOTCONN WSAENOTCONN
-#endif
-
-#ifndef ESHUTDOWN
-#define ESHUTDOWN WSAESHUTDOWN
-#endif
-
-#ifndef ETIMEDOUT
-#define ETIMEDOUT WSAETIMEDOUT
-#endif
-
-#ifndef ECONNREFUSED
-#define ECONNREFUSED WSAECONNREFUSED
-#endif
-
 #ifndef ELOOP
 #define ELOOP WSAELOOP
-#endif
-
-#ifndef ENAMETOOLONG
-#define ENAMETOOLONG WSAENAMETOOLONG
-#endif
-
-#ifndef EHOSTDOWN
-#define EHOSTDOWN WSAEHOSTDOWN
-#endif
-
-#ifndef EHOSTUNREACH
-#define EHOSTUNREACH WSAEHOSTUNREACH
-#endif
-
-#ifndef ENOTEMPTY
-#define ENOTEMPTY WSAENOTEMPTY
-#endif
-
-#ifndef EDQUOT
-#define EDQUOT WSAEDQUOT
-#endif
-
-#ifndef ESTALE
-#define ESTALE WSAESTALE
-#endif
-
-#ifndef ERMOTE
-#define EREMOTE WSAEREMOTE
-#endif
-
-/* Questionable fall backs: */
-
-#ifndef EUSERS
-#define EUSERS WSAEUSERS
-#endif
-
-#ifndef ECANCELED
-#define ECANCELED WSAECANCELLED
 #endif
 
 #ifndef EBADMSG
@@ -741,7 +575,7 @@ struct MLton_utsname {
         char machine[20];
         char nodename[256];
         char release[20];
-        char sysname[30];
+        char sysname[20];
         char version[20];
 };
 
@@ -824,15 +658,14 @@ MLTON_WRAPPER int MLton_uname (struct utsname *buf);
 #define EXECVP(file, args)  execvp (file, (const char* const*) args)
 #define SPAWN_MODE _P_NOWAIT
 
-/* Windows exit status comes from:
- *  1. ExitProcess (used by return from main and exit)
- *  2. TerminateProcess (used by a remote process to 'kill')
- *
- * Windows does NOT differentiate between these two cases.
- * The waitpid API expects us to be able to tell the difference,
- * so we will emulate this difference by setting high 31st bit 
- * whenever we 'kill' a process.
- */
+/* A status looks like:
+      <2 bytes info> <2 bytes code>
+
+      <code> == 0, child has exited, info is the exit value
+      <code> == 1..7e, child has exited, info is the signal number.
+      <code> == 7f, child has stopped, info was the signal number.
+      <code> == 80, there was a core dump.
+*/
 
 #ifndef WNOHANG
 #define WNOHANG 1
@@ -842,26 +675,24 @@ MLTON_WRAPPER int MLton_uname (struct utsname *buf);
 #define WUNTRACED 2
 #endif
 
-#define SIGNALLED_BIT   0x80000000UL
-
 #ifndef WIFEXITED
-#define WIFEXITED(w)    (((w) & SIGNALLED_BIT) == 0)
+#define WIFEXITED(w)    (((w) & 0xff) == 0)
 #endif
 
 #ifndef WIFSIGNALED
-#define WIFSIGNALED(w)  (((w) & SIGNALLED_BIT) != 0)
+#define WIFSIGNALED(w)  (((w) & 0x7f) > 0 && (((w) & 0x7f) < 0x7f))
 #endif
 
 #ifndef WIFSTOPPED
-#define WIFSTOPPED(w)   0
+#define WIFSTOPPED(w)   (((w) & 0xff) == 0x7f)
 #endif
 
 #ifndef WEXITSTATUS
-#define WEXITSTATUS(w)  ((w) & 0xff)
+#define WEXITSTATUS(w)  (((w) >> 8) & 0xff)
 #endif
 
 #ifndef WTERMSIG
-#define WTERMSIG(w)     ((w) & 0xff)
+#define WTERMSIG(w)     ((w) & 0x7f)
 #endif
 
 #ifndef WSTOPSIG
@@ -869,7 +700,7 @@ MLTON_WRAPPER int MLton_uname (struct utsname *buf);
 #endif
 
 /* Sometimes defined by mingw */
-#if !defined(TIMESPEC_DEFINED) && !defined(_TIMESPEC_DEFINED)
+#ifndef TIMESPEC_DEFINED
 struct timespec {
   time_t tv_sec;
   long tv_nsec;
@@ -1541,7 +1372,7 @@ MLTON_WRAPPER int MLton_tcsetpgrp (int fd, pid_t pgrpid);
 #endif
 
 #ifndef MSG_DONTWAIT
-#define MSG_DONTWAIT 0x1000000
+#define MSG_DONTWAIT 0
 #endif
 
 #ifndef MSG_EOR

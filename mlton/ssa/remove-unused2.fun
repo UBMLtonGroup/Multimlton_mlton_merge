@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,8 +6,10 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor RemoveUnused2 (S: SSA2_TRANSFORM_STRUCTS): SSA2_TRANSFORM =
+functor RemoveUnused2 (S: REMOVE_UNUSED2_STRUCTS): REMOVE_UNUSED2 =
 struct
+
+type int = Int.t
 
 open S
 open Exp Statement Transfer
@@ -289,7 +290,7 @@ structure LabelInfo =
    end
 
 
-fun transform2 (Program.T {datatypes, globals, functions, main}) =
+fun remove (Program.T {datatypes, globals, functions, main}) =
    let
       val {get = conInfo: Con.t -> ConInfo.t,
            set = setConInfo, ...} =

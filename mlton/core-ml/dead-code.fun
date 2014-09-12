@@ -1,5 +1,4 @@
-(* Copyright (C) 2011 Matthew Fluet.
- * Copyright (C) 1999-2005 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2005 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -25,7 +24,7 @@ fun deadCode {prog} =
                                          then escape true
                                       else ())
            ; false))
-      fun decIsWildOrUnit (d: Dec.t): bool =
+      fun decIsWild (d: Dec.t): bool =
          case d of
             Val {rvbs, vbs, ...} =>
                0 = Vector.length rvbs
@@ -44,6 +43,7 @@ fun deadCode {prog} =
           | Val {rvbs, vbs, ...} =>
                Vector.exists (rvbs, varIsUsed o #var)
                orelse Vector.exists (vbs, patVarIsUsed o #pat)
+               orelse decIsWild d
       fun useVar x = setVarIsUsed (x, true)
       fun useExp (e: Exp.t): unit = Exp.foreachVar (e, useVar)
       fun useLambda (l: Lambda.t): unit =
@@ -66,7 +66,7 @@ fun deadCode {prog} =
           in
              if deadCode
                 then List.fold (rev decs, [], fn (dec, decs) =>
-                                if decIsWildOrUnit dec orelse decIsNeeded dec
+                                if decIsWild dec orelse decIsNeeded dec
                                    then (useDec dec; dec :: decs)
                                    else decs)
                 else (List.foreach (decs, useDec)

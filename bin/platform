@@ -31,7 +31,7 @@ AIX)
         HOST_OS='aix'
         arch=`/usr/sbin/lsattr -a type -F deflt -l proc0`
         case $arch in
-        POWER) arch=powerpc64 ;;
+        POWER) arch=powerpc ;;
         esac
 ;;
 CYGWIN*)
@@ -40,11 +40,8 @@ CYGWIN*)
 Darwin)
         HOST_OS='darwin'
 ;;
-*FreeBSD*)
+FreeBSD*)
         HOST_OS='freebsd'
-;;
-GNU)
-        HOST_OS='hurd'
 ;;
 HP-UX)
 	HOST_OS='hpux'
@@ -93,9 +90,6 @@ amd64)
 arm*)
         HOST_ARCH=arm
 ;;
-aarch64)
-        HOST_ARCH=arm64
-;;
 parisc*)
         HOST_ARCH=hppa
 ;;
@@ -111,12 +105,6 @@ m68k*)
 mips*)
 # big-endian and little-endian detect via headers
         HOST_ARCH=mips
-;;
-powerpc64)
-	HOST_ARCH=powerpc64
-;;
-ppc64)
-        HOST_ARCH=powerpc64
 ;;
 powerpc)
         HOST_ARCH=powerpc
@@ -136,7 +124,7 @@ sparc*)
 sun*)
         HOST_ARCH=sparc
 ;;
-i?86*)
+i?86)
         HOST_ARCH=x86
 ;;
 *)

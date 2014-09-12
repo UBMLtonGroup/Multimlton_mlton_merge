@@ -11,9 +11,6 @@
     return h##f (x);                                            \
   }
 unaryReal(abs, fabs)
-unaryReal(realCeil, ceil)
-unaryReal(realFloor, floor)
-unaryReal(realTrunc, trunc)
 unaryReal(round, rint)
 #undef unaryReal
 

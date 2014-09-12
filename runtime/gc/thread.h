@@ -10,7 +10,7 @@
 
 /*
  * Thread objects are normal objects with the following layout:
- * 
+ *
  * header ::
  * padding ::
  * bytesNeeded (size_t) ::

@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,11 +6,14 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor KnownCase (S: SSA_TRANSFORM_STRUCTS): SSA_TRANSFORM =
+functor KnownCase (S: KNOWN_CASE_STRUCTS): KNOWN_CASE =
 struct
 
 open S
 open Exp Transfer
+
+type int = Int.t
+type word = Word.t
 
 fun mkPost ()
   = let
@@ -276,7 +278,7 @@ structure LabelInfo =
         activate
   end
 
-fun transform (Program.T {globals, datatypes, functions, main})
+fun simplify (Program.T {globals, datatypes, functions, main})
   = let
       (* restore and shrink *)
       val restore = restoreFunction {globals = globals}

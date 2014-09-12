@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -186,7 +185,7 @@ struct
   val applyFFTempFunContents 
     = makeContents {base = Immediate.label applyFFTempFun,
                     size = wordSize,
-                    class = Classes.CStatic}
+                    class = Classes.CArg}
   val applyFFTempFunContentsOperand
     = Operand.memloc applyFFTempFunContents
   val applyFFTempRegArg = Label.fromString "applyFFTempRegArg"
@@ -262,6 +261,32 @@ struct
   end
 
   val globalObjptrNonRoot_base = Label.fromString "globalObjptrNonRoot"
+
+  val fileNameLabel = Label.fromString "fileName"
+  val fileName = Operand.immediate_label fileNameLabel
+  (* This is a hack: The line number needs to be pushed, but the actual
+   *  call to GC_collect is about 9 lines further (push 4 more arguments,
+   *  adjust stackTop, save return label,
+   *  save gcState.frontier and gcState.stackTop, make call).
+   * However, there are probably cases where this is different.
+   *
+   * We also have another hack because on some platforms, Label.toString appends
+   * an _ to the beginning of each label.
+   *)
+  val fileLineLabel =
+     Promise.lazy (fn () => Label.fromString (if !Control.labelsHaveExtra_
+                                                 then "_LINE__"
+                                              else "__LINE__"))
+
+  (* When debugging, the assembly file is not passed through cpp,
+   * so use an dummy value (zero).
+   *)
+  val fileLine
+    = fn () => if !Control.debug
+                 then Operand.immediate (Immediate.zero)
+                 else (Operand.immediate
+                       (Immediate.labelPlusInt
+                        (fileLineLabel (), 9)))
 
   val gcState_label = Label.fromString "gcState"
 

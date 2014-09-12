@@ -29,25 +29,19 @@
 #include <utime.h>
 #include <windows.h>
 
-#include <cygwin/version.h>
-
 #define MLton_Platform_OS_host "cygwin"
 
 #define HAS_FEROUND FALSE
+#define HAS_FPCLASSIFY TRUE
+#define HAS_MSG_DONTWAIT FALSE
 #define HAS_REMAP TRUE
 #define HAS_SIGALTSTACK FALSE
+#define HAS_SIGNBIT TRUE
 #define HAS_SPAWN TRUE
 #define HAS_TIME_PROFILING FALSE
 
-#ifndef MSG_DONTWAIT
-#define HAS_MSG_DONTWAIT FALSE
 /* This should not conflict with existing flags. */
 #define MSG_DONTWAIT 0x1000000
-#else
-#define HAS_MSG_DONTWAIT TRUE
-#endif
-
-#define SPAWN_MODE _P_NOWAIT
 
 /* Cygwin does not handle IPv6. */
 #ifndef AF_INET6
@@ -73,4 +67,3 @@ typedef long suseconds_t; // type of timeval.tv_usec in sys/time.h
 #ifndef MSG_EOR
 // Unimplemented on Cygwin
 #define MSG_EOR 0
-#endif

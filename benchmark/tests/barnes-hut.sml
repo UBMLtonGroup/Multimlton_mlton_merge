@@ -125,7 +125,7 @@ functor Space (V : VECTOR) : SPACE =
       }
 
     fun eqBody(Body{mass,pos,vel,acc,phi},
-               Body{mass=m1,pos=p1,vel=v1,acc=a1,phi=h1}) = 
+               Body{mass=m1,pos=p1,vel=v1,acc=a1,phi=h1}) =
       (Real.==(mass, m1) andalso Real.==(!phi, !h1)
        andalso V.equal(!pos, !p1) andalso V.equal(!vel, !v1)
        andalso V.equal(!acc, !a1))
@@ -233,7 +233,7 @@ functor Load (S : SPACE) : LOAD =
           val xsc = V.divvs (V.subv(rp, rmin), rsize)
           fun cvt x = if ((0.0 <= x) andalso (x < 1.0))
                 then floor(rIMAX * x)
-                else raise NotIntCoord
+                else (print "\nRaising notIntCoord"; raise NotIntCoord)
           in
             V.mapv cvt xsc
           end
@@ -248,31 +248,42 @@ functor Load (S : SPACE) : LOAD =
           end
 
   (* enlarge cubical "box", salvaging existing tree structure. *)
-    fun expandBox (nd as S.Body{pos, ...}, box as S.Space{rmin, rsize, root}) = (
-          (intcoord (!pos, rmin, rsize); box)
-            handle NotIntCoord => let
-              val rmid = V.addvs (rmin, 0.5 * rsize)
-              val rmin' = V.map3v (fn (x,y,z) =>
-                              if x < y then z - rsize else z) (!pos, rmid, rmin)
-              val rsize' = 2.0 * rsize
-              fun mksub (v, r) = let
-                    val x = intcoord (v, rmin', rsize')
-                    val k = subindex (x, IMAXrs1)
-                    val cell = S.mkCell ()
-                    in
-                      S.putCell (cell, k, r); cell
-                    end
-              val box = (case root
-                     of S.Empty => S.Space{rmin=rmin', rsize=rsize', root=root}
-                      | _ => S.Space{
-                            rmin = rmin',
-                            rsize = rsize',
-                            root = S.mkCellNode (mksub (rmid, root))
-                          }
-                    (* end case *))
-              in
-                expandBox (nd, box)
-              end)
+    fun expandBox (nd as S.Body{pos, ...}, box as S.Space{rmin, rsize, root}) =
+         (let
+           val rp = !pos
+           val xsc = V.divvs (V.subv(rp, rmin), rsize)
+           fun cvt (x, aux) = if ((0.0 <= x) andalso (x < 1.0))
+                then (true andalso aux)
+                else false
+           val res = V.foldv cvt xsc true
+          in
+            if res then
+                box
+            else
+             (let
+                val rmid = V.addvs (rmin, 0.5 * rsize)
+                val rmin' = V.map3v (fn (x,y,z) =>
+                                if x < y then z - rsize else z) (!pos, rmid, rmin)
+                val rsize' = 2.0 * rsize
+                fun mksub (v, r) = let
+                      val x = intcoord (v, rmin', rsize')
+                      val k = subindex (x, IMAXrs1)
+                      val cell = S.mkCell ()
+                      in
+                        S.putCell (cell, k, r); cell
+                      end
+                val box = (case root
+                      of S.Empty => S.Space{rmin=rmin', rsize=rsize', root=root}
+                        | _ => S.Space{
+                              rmin = rmin',
+                              rsize = rsize',
+                              root = S.mkCellNode (mksub (rmid, root))
+                            }
+                      (* end case *))
+                in
+                  expandBox (nd, box)
+                end)
+          end)
 
 
   (* insert a single node into the tree *)
@@ -322,7 +333,7 @@ functor Load (S : SPACE) : LOAD =
   (* initialize tree structure for hack force calculation. *)
     fun makeTree (bodies, rmin, rsize) = let
           fun build ([], space) = space
-            | build ((body as S.Body{mass, ...}) :: r, space) = 
+            | build ((body as S.Body{mass, ...}) :: r, space) =
                if Real.==(mass, 0.0) then build (r, space)
                else let
                    val box = expandBox (body, space)
@@ -392,7 +403,7 @@ functor Grav (S : SPACE) : GRAV =
 (*print(implode["    walksub: dsq = ", makestring dsq, ", ", S.prNode p, "\n"]);*)
                 case p
                  of S.Empty => (phi0, acc0)
-                  | (S.Node{cell = S.BodyCell body, ...}) => 
+                  | (S.Node{cell = S.BodyCell body, ...}) =>
                       if S.eqBody(body, pskip)
                         then (skipSelf := true; (phi0, acc0))
                         else gravsub (p, phi0, acc0, NONE)
@@ -552,17 +563,6 @@ functor DataIO (S : SPACE) : DATA_IO =
             }
           end
 
-    local
-      val timer = ref (Timer.startCPUTimer ())
-    in
-    fun initTimer () = timer := Timer.startCPUTimer()
-    fun cputime () = let
-          val {usr, sys, ...} = Timer.checkCPUTimer(!timer)
-          val totTim = usr
-          in
-            (Time.toReal totTim) / 60.0
-          end
-    end
 
     type out_state = {
         tout : real,
@@ -593,7 +593,6 @@ functor DataIO (S : SPACE) : DATA_IO =
           (* end case *))
 
     fun initOutput {outfile, headline, nbody, tnow, dtime, eps, tol, dtout, tstop} = (
-          initTimer();
           printf ["\n\t\t", headline, "\n\n"];
           printf (map (pad 12) ["nbody", "dtime", "eps", "tol", "dtout", "tstop"]);
           printf ["\n"];
@@ -686,7 +685,7 @@ functor DataIO (S : SPACE) : DATA_IO =
                 fmtReal(9, 3, tnow), fmtReal(9, 4, #totKE data + #totPE data),
                 fmtReal(9, 4, #totKE data / #totPE data), fmtInt(9, nttot),
                 fmtInt(9, nbavg), fmtInt(9, ncavg), fmtInt(9, selfint),
-                fmtReal(9, 2, cputime()), "\n\n"
+                fmtReal(9, 2, 1.0), "\n\n"
               ];
             printvec ("cm pos", #cOfMPos data);
             printvec ("cm vel", #cOfMVel data);
@@ -813,7 +812,7 @@ signature RAND =
     val norm : real -> real
       (* r -> r / (randMax + 1.0) *)
 
-    val range : (int * int) -> real -> int 
+    val range : (int * int) -> real -> int
       (* Map v, randMin <= v <= randMax to integer range [i,j]
        * Exception -
        *   BadArg if j < i
@@ -825,7 +824,7 @@ signature RAND =
  * COPYRIGHT (c) 1991 by AT&T Bell Laboratories.  See COPYRIGHT file for details
  *
  * Random number generator taken from Paulson, pp. 170-171.
- * Recommended by Stephen K. Park and Keith W. Miller, 
+ * Recommended by Stephen K. Park and Keith W. Miller,
  * Random number generators: good ones are hard to find,
  * CACM 31 (1988), 1192-1201
  *
@@ -841,10 +840,10 @@ structure Rand : RAND =
     val randMin = 1.0
     val randMax = m - 1.0
 
-    fun random seed = let 
+    fun random seed = let
           val t = a*seed
           in
-            t - m * real(floor(t/m))  
+            t - m * real(floor(t/m))
           end
 
     fun mkRandom seed = let
@@ -855,10 +854,10 @@ structure Rand : RAND =
 
     fun norm r = r / m
 
-    fun range (i,j) = 
-          if j < i 
+    fun range (i,j) =
+          if j < i
             then raise Fail "Rand.range"
-            else let 
+            else let
               val R = real(j - i + 1)
               in
                 fn r => i + floor(R*(r/m))
@@ -911,7 +910,7 @@ functor Main (V : VECTOR) : sig
   (* some math utilities *)
 (** NOTE: these are part of the Math structure in the new basis *)
     val pi = 3.14159265358979323846
-    fun pow(x, y) = 
+    fun pow(x, y) =
       if Real.==(y, 0.0) then 1.0 else Math.exp (y * Math.ln x)
 
   (* random numbers *)
@@ -1242,7 +1241,7 @@ structure Main : BMARK =
               output = fn _ => (),
               bodies = M3.testdata n,
               tnow = 0.0, tstop = 2.0,
-              dtime = 0.025, eps = 0.05, tol = 1.0,
+              dtime = 0.025, eps = 0.000001, tol = 1.0,
               rmin = M3.S.V.tabulate (fn _ => ~2.0),
               rsize = 4.0
             })

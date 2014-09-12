@@ -1,5 +1,4 @@
-/* Copyright (C) 2012 Matthew Fluet.
- * Copyright (C) 1999-2009 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -17,7 +16,7 @@
 /* Only enable _POSIX_C_SOURCE on platforms that don't have broken
  * system headers.
  */
-#if (defined (__linux__) || defined(__GNU__))
+#if (defined (__linux__))
 #define _POSIX_C_SOURCE 200112L
 #endif
 #define _FILE_OFFSET_BITS 64
@@ -41,6 +40,7 @@
 #include <limits.h>
 // #include <locale.h>
 #include <math.h>
+#include <pthread.h>
 // #include <setjmp.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -56,19 +56,19 @@
 // #include <wchar.h>
 // #include <wctype.h>
 
-#include <gmp.h>
-
-
 #define COMPILE_TIME_ASSERT(name, x) \
         typedef int _COMPILE_TIME_ASSERT___##name[(x) ? 1 : -1]
 COMPILE_TIME_ASSERT(CHAR_BIT__is_eight, CHAR_BIT == 8);
 COMPILE_TIME_ASSERT(sizeof_float__is_four, sizeof(float) == 4);
 COMPILE_TIME_ASSERT(sizeof_double__is_eight, sizeof(double) == 8);
 
-
 #if (defined (__APPLE_CC__))
 #define __Darwin__
 #endif
+
+// No-op on most platforms for now
+#define set_cpu_affinity(num) do {} while (0)
+
 
 #if (defined (_AIX))
 #include "platform/aix.h"
@@ -76,13 +76,12 @@ COMPILE_TIME_ASSERT(sizeof_double__is_eight, sizeof(double) == 8);
 #include "platform/cygwin.h"
 #elif (defined (__Darwin__))
 #include "platform/darwin.h"
-#elif (defined (__FreeBSD__) || defined(__FreeBSD_kernel__))
+#elif (defined (__FreeBSD__))
 #include "platform/freebsd.h"
 #elif (defined (__hpux__))
 #include "platform/hpux.h"
-#elif (defined (__GNU__))
-#include "platform/hurd.h"
 #elif (defined (__linux__))
+#undef set_cpu_affinity
 #include "platform/linux.h"
 #elif (defined (__MINGW32__))
 #include "platform/mingw.h"
@@ -103,8 +102,6 @@ COMPILE_TIME_ASSERT(sizeof_double__is_eight, sizeof(double) == 8);
 #include "platform/amd64.h"
 #elif (defined (__arm__))
 #include "platform/arm.h"
-#elif (defined (__aarch64__))
-#include "platform/arm64.h"
 #elif (defined (__hppa__))
 #include "platform/hppa.h"
 #elif (defined (__ia64__))
@@ -113,8 +110,6 @@ COMPILE_TIME_ASSERT(sizeof_double__is_eight, sizeof(double) == 8);
 #include "platform/m68k.h"
 #elif (defined (__mips__))
 #include "platform/mips.h"
-#elif (defined (__powerpc64__))
-#include "platform/powerpc64.h"
 #elif (defined (__ppc__)) || (defined (__powerpc__))
 #include "platform/powerpc.h"
 #elif (defined (__s390__))
@@ -126,7 +121,6 @@ COMPILE_TIME_ASSERT(sizeof_double__is_eight, sizeof(double) == 8);
 #else
 #error unknown platform arch
 #endif
-
 
 #ifndef POINTER_BITS
 #if UINTPTR_MAX == UINT32_MAX
@@ -142,6 +136,9 @@ COMPILE_TIME_ASSERT(sizeof_double__is_eight, sizeof(double) == 8);
 #define ADDRESS_BITS POINTER_BITS
 #endif
 
+#include "gmp.h"
+#include "export.h"
+
 COMPILE_TIME_ASSERT(sizeof_uintptr_t__is__sizeof_voidStar,
                     sizeof(uintptr_t) == sizeof(void*));
 COMPILE_TIME_ASSERT(sizeof_uintptr_t__is__sizeof_size_t,
@@ -152,7 +149,5 @@ COMPILE_TIME_ASSERT(sizeof_voidStar__is__pointer_bits,
                     sizeof(void*)*CHAR_BIT == POINTER_BITS);
 COMPILE_TIME_ASSERT(address_bits__lte__pointer_bits,
                     ADDRESS_BITS <= POINTER_BITS);
-
-#include "export.h"
 
 #endif /* _MLTON_CENV_H_ */

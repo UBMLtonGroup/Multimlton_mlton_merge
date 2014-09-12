@@ -1,5 +1,4 @@
-(* Copyright (C) 2009,2013 Matthew Fluet.
- * Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -9,6 +8,22 @@
 
 Library
 
+(* from mlyacc-lib *)
+signature LR_TABLE
+signature TOKEN
+signature LR_PARSER
+signature LEXER
+signature ARG_LEXER
+signature PARSER_DATA
+signature PARSER
+signature ARG_PARSER
+functor Join
+functor JoinWithArg
+structure LrTable
+structure Stream
+structure LrParser
+(* end from ml-yacc-lib *)
+
 signature ARRAY
 signature ENV
 signature ERROR
@@ -16,7 +31,7 @@ signature EUCLIDEAN_RING
 signature INTEGER
 signature INT_INF
 signature LIST
-(* signature MONO_CONTAINER *)
+(*signature MONO_CONTAINER *)
 signature MONO_ENV
 signature OPTION
 signature ORDER
@@ -43,8 +58,8 @@ structure Bool
 structure Buffer
 structure Byte
 structure Char
-(* structure CharArray *)
-(* structure CharBuffer *)
+structure CharArray
+structure CharBuffer
 structure CharVector
 structure ChoicePattern
 structure ClearablePromise
@@ -70,10 +85,11 @@ structure FixedPoint
 structure Function
 structure HashSet
 structure Html
+structure Http
 structure In
 structure InitScript
 structure Int
-(* structure Int32 *)
+structure Int32
 structure IntInf
 structure InsertionSort
 structure INetSock
@@ -89,6 +105,7 @@ structure List
 (* structure MergeSortList *)
 (* structure MergeSortVector *)
 structure MLton
+structure Net
 structure Option
 structure OS
 structure Out
@@ -113,7 +130,7 @@ structure Random
 structure RDB
 structure Reader
 structure Real
-(* structure RealVector *)
+structure RealVector
 structure Real32
 structure Real64
 structure Ref
@@ -143,11 +160,11 @@ structure Url
 structure Vector
 structure Word
 structure Word8
-(* structure Word8Array *)
-(* structure Word8ArraySlice *)
-(* structure Word8Vector *)
-(* structure Word16 *)
-(* structure Word32 *)
+structure Word8Array
+structure Word8ArraySlice
+structure Word8Vector
+structure Word16
+structure Word32
 
 functor AlphaBeta
 (* functor BinaryHeap *)
@@ -172,7 +189,7 @@ functor Pair
 functor PolyEnv
 functor Ring
 functor RingWithIdentity
-(* functor SplayMonoEnv *)
+(*functor SplayMonoEnv*)
 functor Sum
 functor Tree
 functor UniqueId
@@ -181,6 +198,7 @@ functor UnorderedSet
 
 is
 
+../mlyacc/sources.cm
 basic/sources.cm
 set/sources.cm
 env/sources.cm

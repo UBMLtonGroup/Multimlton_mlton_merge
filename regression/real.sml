@@ -143,7 +143,7 @@ val _ =
         "91827365478400")]
    end
 
-val _ = print "\nTesting scan\n"
+val _ = print "\nTesting scan"
 
 val _ = for' (fn r =>
               let
@@ -191,12 +191,11 @@ val _ = print "\nTesting maxFinite, minPos, minNormalPos\n"
 local
   val isNormal = Real.isNormal
   val isFinite = Real.isFinite
-  val isPositive = fn r =>
-     case class r of
-        NORMAL => r > zero
-      | SUBNORMAL => r > zero
-      | INF => r > zero
-      | _ => false
+  (*
+   * Total hack!!  Bounce r through isNormal (a C call) to force r out of the
+   * FPU.  Interestingly, the same hack works for SML/NJ.
+   *)
+  val isPositive = fn r => (Real.isNormal r; r > zero)
 
   fun min (p: real -> bool): real =
     let

@@ -6,29 +6,11 @@ val suffix = "\
    \  </Fragment>\n\
    \</Wix>\n"
 
-(* Identifiers must be unique per path.
- *   => Therefore we include a 64-bit hash.
- *      + Careful: / and \ must hash the same.
- * They must also be alphanumeric and less than 78 bytes.
- *   => We convert non-alnums to _
- *   => We trim the filename to the last 40 bytes.
- * 
- * The contents of the installer cab are sorted by the identifier we choose.
- * Similar files compress better when they are near each other.
- *   => Use: rev(filename).hash as the identifier
- *      + Sorts first by file-type
- *      + Same-named files (in different directories) get clumped together.
- *)
-fun slashes c = if c = #"\\" then #"/" else c
-fun hash (c, w) = w * 0w5746711073709751657 + Word64.fromInt (Char.ord (slashes c))
-fun alnum c = if Char.isAlphaNum c orelse c = #"." then c else #"_"
-fun trim s = if String.size s > 40 then String.substring (s, 0, 40) else s
-fun rev s = 
-   let val len = CharVector.length s in
-   CharVector.tabulate (len, fn i => CharVector.sub (s, len-1-i)) end
-fun escape s =
-   (trim o rev o CharVector.map alnum o #file o OS.Path.splitDirFile) s
-   ^ "." ^ Word64.toString (foldl hash 0w0 (explode s))
+fun tail s =
+    if String.size s < 60 then s else
+    String.extract (s, String.size s - 60, NONE)
+fun escape c = if Char.isAlphaNum c orelse c = #"." then c else #"_"
+val escape = tail o CharVector.map escape
 
 fun dirEntry path =
    let
@@ -43,29 +25,20 @@ fun dirEntry path =
                        \Guid='" ^ guid ^ "'>\n\
       \         <File Id='file." ^ uglypath ^ "' \
                      \Name='" ^ file ^ "' DiskId='1' Vital='yes' \
-                     \Source='staging/" ^ path ^ "' KeyPath='yes' />\n\
+                     \Source='staging/" ^ path ^ "' />\n\
       \      </Component>\n\
       \    </DirectoryRef>\n"
    end 
 and guid path = 
    let
-      val guid = 
-         MLton.Process.create {
-            args = [path],
-            env = NONE,
-            path = "guid.exe",
-            stdin  = MLton.Process.Param.null,
-            stderr = MLton.Process.Param.self,
-            stdout = MLton.Process.Param.pipe
-         }
-      val input = MLton.Process.Child.textIn (MLton.Process.getStdout guid)
-      val out =
-         case TextIO.inputLine input of
-            NONE => raise Fail "guid provided no hash"
-          | SOME s => s
-      val _ = MLton.Process.reap guid
+      val w32 = Word32.fromLarge o Word.toLarge o MLton.Random.rand
+      val w16 = Word16.fromLarge o Word.toLarge o MLton.Random.rand
+      val zero = "00000000"
+      fun pad i s = String.substring (zero, 0, i - String.size s) ^ s 
+      val w32 = pad 8 o Word32.toString o w32
+      val w16 = pad 4 o Word16.toString o w16
    in
-      String.substring (out, 0, 36)
+      w32 () ^"-"^ w16 () ^"-"^ w16 () ^"-"^ w16 () ^"-"^ w16 () ^ w32 ()
    end
 
 fun tail path = String.substring (path, 0, String.size path - 1)
@@ -81,3 +54,4 @@ val () = MLton.Random.srand (Word.fromLargeInt (Time.toNanoseconds (Time.now ())
 val () = print prefix
 val () = loop ()
 val () = print suffix
+ 

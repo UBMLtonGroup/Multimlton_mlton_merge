@@ -1,5 +1,4 @@
-/* Copyright (C) 2009,2012 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -29,9 +28,9 @@ void displayGenerationalMaps (__attribute__ ((unused)) GC_state s,
     fprintf (stderr, "crossMap trues\n");
     for (i = 0; i < generational->crossMapLength; i++)
       unless (CROSS_MAP_EMPTY == generational->crossMap[i])
-        fprintf (stderr, "\t%"PRIuMAX"  "FMTCME"  %"PRIuMAX"\n",
+        fprintf (stderr, "\t%"PRIuMAX"  "FMTCME"  "FMTCME"\n",
                  (uintmax_t)i, generational->crossMap[i],
-                 (uintmax_t)(CROSS_MAP_OFFSET_SCALE * generational->crossMap[i]));
+                 CROSS_MAP_OFFSET_SCALE * generational->crossMap[i]);
     fprintf (stderr, "\n");
   }
 }
@@ -59,11 +58,9 @@ GC_crossMapIndex sizeToCrossMapIndex (size_t z) {
   return (GC_crossMapIndex)z >> CARD_SIZE_LOG2;
 }
 
-#if ASSERT
 bool isCardMarked (GC_state s, pointer p) {
   return (*pointerToCardMapAddr (s, p) != 0x0);
 }
-#endif
 
 void markCard (GC_state s, pointer p) {
   if (DEBUG_CARD_MARKING)
@@ -95,23 +92,21 @@ void setCardMapAbsolute (GC_state s) {
    */
   s->generationalMaps.cardMapAbsolute =
     s->generationalMaps.cardMap
-    - pointerToCardMapIndexAbsolute (s->heap.start);
+    - pointerToCardMapIndexAbsolute (s->heap->start);
   if (DEBUG_CARD_MARKING)
     fprintf (stderr, "setCardMapAbsolute = "FMTPTR"\n",
              (uintptr_t)s->generationalMaps.cardMapAbsolute);
 }
 
-#if ASSERT
 pointer getCrossMapCardStart (GC_state s, pointer p) {
   /* The p - 1 is so that a pointer to the beginning of a card falls
    * into the index for the previous crossMap entry.
    */
   return
-    (p == s->heap.start)
-    ? s->heap.start
+    (p == s->heap->start)
+    ? s->heap->start
     : (p - 1) - ((uintptr_t)(p - 1) % CARD_SIZE);
 }
-#endif
 
 size_t sizeofCardMap (GC_state s, size_t heapSize) {
   unless (s->mutatorMarksCards) {
@@ -128,7 +123,7 @@ size_t sizeofCardMap (GC_state s, size_t heapSize) {
   return cardMapSize;
 }
 
-GC_cardMapIndex lenofCardMap (ARG_USED_FOR_ASSERT GC_state s, size_t cardMapSize) {
+GC_cardMapIndex lenofCardMap (__attribute__ ((unused)) GC_state s, size_t cardMapSize) {
   GC_cardMapIndex cardMapLength;
 
   assert (isAligned (cardMapSize, s->sysvals.pageSize));
@@ -154,7 +149,7 @@ size_t sizeofCrossMap (GC_state s, size_t heapSize) {
   return crossMapSize;
 }
 
-GC_crossMapIndex lenofCrossMap (ARG_USED_FOR_ASSERT GC_state s, size_t crossMapSize) {
+GC_crossMapIndex lenofCrossMap (__attribute__ ((unused)) GC_state s, size_t crossMapSize) {
   GC_crossMapIndex crossMapLength;
 
   assert (isAligned (crossMapSize, s->sysvals.pageSize));
@@ -195,61 +190,6 @@ size_t sizeofCardMapAndCrossMap (GC_state s, size_t heapSize) {
   return totalMapSize;
 }
 
-/*
- * heapSize = invertSizeofCardMapAndCrossMap (s, heapWithMapsSize);
- * implies
- * heapSize + sizeofCardMapAndCrossMap (s, heapSize)
- *  <= heapWithMapsSize
- *  < (heapSize + s->sysvals.pageSize)
- *    + sizeofCardMapAndCrossMap (s, heapSize + s->sysvals.pageSize)
- */
-size_t invertSizeofCardMapAndCrossMap (GC_state s, size_t heapWithMapsSize) {
-  unless (s->mutatorMarksCards) {
-    return heapWithMapsSize;
-  }
-  assert (isAligned (heapWithMapsSize, s->sysvals.pageSize));
-
-  size_t minHeapSize;
-  if (heapWithMapsSize <= 3 * s->sysvals.pageSize) {
-    minHeapSize = 0;
-  } else {
-    double minHeapSizeD;
-    minHeapSizeD =
-      (((double)(CARD_SIZE)
-        / (double)(CARD_SIZE + CARD_MAP_ELEM_SIZE + CROSS_MAP_ELEM_SIZE))
-       * (double)(heapWithMapsSize - 3 * s->sysvals.pageSize)) -
-      (((double)(CARD_MAP_ELEM_SIZE + CROSS_MAP_ELEM_SIZE)
-        / (double)(CARD_SIZE + CARD_MAP_ELEM_SIZE + CROSS_MAP_ELEM_SIZE)) *
-       (double)(s->sysvals.pageSize));
-    minHeapSize = alignDown ((size_t)minHeapSizeD, s->sysvals.pageSize);
-  }
-
-  size_t heapSize = minHeapSize;
-  size_t nextHeapSize = heapSize + s->sysvals.pageSize;
-  /* The termination condition is:
-   *   heapWithMapsSize >= nextHeapSize + sizeofCardMapAndCrossMap (s, nextHeapSize)
-   * However, nextHeapSize + sizeofCardMapAndCrossMap (s, nextHeapSize) may overflow.
-   */
-  while (heapWithMapsSize >= sizeofCardMapAndCrossMap (s, nextHeapSize) and
-         heapWithMapsSize - sizeofCardMapAndCrossMap (s, nextHeapSize) >= nextHeapSize) {
-    heapSize = nextHeapSize;
-    nextHeapSize += s->sysvals.pageSize;
-  }
-
-  assert (isAligned (heapSize, s->sysvals.pageSize));
-  assert (heapSize + sizeofCardMapAndCrossMap (s, heapSize) <= heapWithMapsSize);
-  assert (nextHeapSize == heapSize + s->sysvals.pageSize);
-  assert (heapWithMapsSize < sizeofCardMapAndCrossMap (s, nextHeapSize) or
-          heapWithMapsSize - sizeofCardMapAndCrossMap (s, nextHeapSize) < nextHeapSize);
-
-  if (DEBUG_DETAILED)
-    fprintf (stderr, "invertSizeofCardMapAndCrossMap(%s) = %s\n",
-             uintmaxToCommaString(heapWithMapsSize),
-             uintmaxToCommaString(heapSize));
-
-  return heapSize;
-}
-
 void setCardMapAndCrossMap (GC_state s) {
   unless (s->mutatorMarksCards) {
     s->generationalMaps.cardMapLength = 0;
@@ -265,20 +205,20 @@ void setCardMapAndCrossMap (GC_state s) {
   GC_crossMapIndex crossMapLength;
   size_t crossMapSize;
 
-  cardMapSize = sizeofCardMap (s, s->heap.size);
+  cardMapSize = sizeofCardMap (s, s->heap->size);
   cardMapLength = lenofCardMap (s, cardMapSize);
   s->generationalMaps.cardMapLength = cardMapLength;
 
-  crossMapSize = sizeofCrossMap (s, s->heap.size);
+  crossMapSize = sizeofCrossMap (s, s->heap->size);
   crossMapLength = lenofCrossMap (s, crossMapSize);
   s->generationalMaps.crossMapLength = crossMapLength;
 
   /* The card map starts at the end of the heap. */
-  assert (s->heap.withMapsSize == s->heap.size + cardMapSize + crossMapSize);
+  assert (s->heap->withMapsSize == s->heap->size + cardMapSize + crossMapSize);
   s->generationalMaps.cardMap =
-    (GC_cardMap) (s->heap.start + s->heap.size);
+    (GC_cardMap) (s->heap->start + s->heap->size);
   s->generationalMaps.crossMap =
-    (GC_crossMap) (s->heap.start + s->heap.size + cardMapSize);
+    (GC_crossMap) (s->heap->start + s->heap->size + cardMapSize);
   setCardMapAbsolute (s);
   clearCardMapAndCrossMap (s);
 }
@@ -304,12 +244,13 @@ bool isCrossMapOk (GC_state s) {
   mapSize = s->generationalMaps.crossMapLength * CROSS_MAP_ELEM_SIZE;
   map = GC_mmapAnon_safe (NULL, mapSize);
   memset (map, CROSS_MAP_EMPTY, mapSize);
-  back = s->heap.start + s->heap.oldGenSize;
-  front = alignFrontier (s, s->heap.start);
+  back = s->heap->start + s->heap->oldGenSize;
+  cardIndex = 0;
+  front = alignFrontier (s, s->heap->start);
 loopObjects:
   assert (front <= back);
   cardStart = getCrossMapCardStart (s, front);
-  cardIndex = sizeToCardMapIndex ((size_t)(cardStart - s->heap.start));
+  cardIndex = sizeToCardMapIndex (cardStart - s->heap->start);
   map[cardIndex] = (GC_crossMapElem)((front - cardStart) / CROSS_MAP_OFFSET_SCALE);
   if (front < back) {
     front += sizeofObject (s, advanceToObjectData (s, front));
@@ -334,20 +275,20 @@ void updateCrossMap (GC_state s) {
     displayGenerationalMaps (s, &s->generationalMaps, stderr);
   }
   assert (isAligned (s->alignment, CROSS_MAP_OFFSET_SCALE));
-  if (s->generationalMaps.crossMapValidSize == s->heap.oldGenSize)
+  if (s->generationalMaps.crossMapValidSize == s->heap->oldGenSize)
     goto done;
-  oldGenEnd = s->heap.start + s->heap.oldGenSize;
-  objectStart = s->heap.start + s->generationalMaps.crossMapValidSize;
-  if (objectStart == s->heap.start) {
+  oldGenEnd = s->heap->start + s->heap->oldGenSize;
+  objectStart = s->heap->start + s->generationalMaps.crossMapValidSize;
+  if (objectStart == s->heap->start) {
     cardIndex = 0;
     objectStart = alignFrontier (s, objectStart);
   } else
-    cardIndex = sizeToCardMapIndex ((size_t)(objectStart - s->heap.start) - 1);
-  cardStart = s->heap.start + cardMapIndexToSize (cardIndex);
+    cardIndex = sizeToCardMapIndex (objectStart - 1 - s->heap->start);
+  cardStart = s->heap->start + cardMapIndexToSize (cardIndex);
   cardEnd = cardStart + CARD_SIZE;
 loopObjects:
   assert (objectStart < oldGenEnd);
-  assert ((objectStart == s->heap.start or cardStart < objectStart)
+  assert ((objectStart == s->heap->start or cardStart < objectStart)
           and objectStart <= cardEnd);
   nextObject = objectStart + sizeofObject (s, advanceToObjectData (s, objectStart));
   if (DEBUG_GENERATIONAL) {
@@ -368,14 +309,14 @@ loopObjects:
      */
     size_t offset;
 
-    offset = (size_t)(objectStart - cardStart) / CROSS_MAP_OFFSET_SCALE;
+    offset = (objectStart - cardStart) / CROSS_MAP_OFFSET_SCALE;
     assert (offset < CROSS_MAP_EMPTY);
     if (DEBUG_GENERATIONAL)
       fprintf (stderr, "crossMap[%"PRIuMAX"] = %"PRIuMAX"\n",
                (uintmax_t)cardIndex, (uintmax_t)offset);
     s->generationalMaps.crossMap[cardIndex] = (GC_crossMapElem)offset;
-    cardIndex = sizeToCardMapIndex ((size_t)(nextObject - s->heap.start) - 1);
-    cardStart = s->heap.start + cardMapIndexToSize (cardIndex);
+    cardIndex = sizeToCardMapIndex (nextObject - 1 - s->heap->start);
+    cardStart = s->heap->start + cardMapIndexToSize (cardIndex);
     cardEnd = cardStart + CARD_SIZE;
   }
   objectStart = nextObject;
@@ -384,9 +325,9 @@ loopObjects:
   assert (objectStart == oldGenEnd);
   s->generationalMaps.crossMap[cardIndex] =
     (GC_crossMapElem)(oldGenEnd - cardStart) / CROSS_MAP_OFFSET_SCALE;
-  s->generationalMaps.crossMapValidSize = s->heap.oldGenSize;
+  s->generationalMaps.crossMapValidSize = s->heap->oldGenSize;
 done:
-  assert (s->generationalMaps.crossMapValidSize == s->heap.oldGenSize);
+  assert (s->generationalMaps.crossMapValidSize == s->heap->oldGenSize);
   assert (isCrossMapOk (s));
   if (DEBUG_GENERATIONAL) {
     fprintf (stderr, "updateCrossMap finished\n");

@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2006, 2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006, 2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -17,6 +16,8 @@ struct
 
 open S
 open Dec PrimExp
+
+type int = Int.t
 
 val tracePrimApplyInfo = Trace.info "Xml.Shrink.Prim.apply"
 

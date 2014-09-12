@@ -1,5 +1,5 @@
 (* Notice: This test will not be passed on platforms like Win32!
-           (due to behind-the-scenes CR/LF <=> LF conversions). *)
+           But for Linux it happens to work... *)
 
 val filename = OS.FileSys.tmpName ()
 
@@ -15,8 +15,6 @@ fun testRange (start, length) =
         val readChars = TextIO.inputAll inStr
         val _ = TextIO.closeIn inStr
 
-        val _ = OS.FileSys.remove filename
-
         fun testCharF (c, cnt) =
               let
                 val readC = CharVector.sub(readChars, cnt)
@@ -24,7 +22,7 @@ fun testRange (start, length) =
                           ()
                         else
                           print ("Error at index: " ^ (Int.toString cnt) ^ ": " ^
-                                 (Char.toString c) ^ " <> " ^ (Char.toString readC) ^ "\n")
+                                 (Char.toString c) ^ " <> " ^ (Char.toString readC))
               in
                 cnt + 1
               end

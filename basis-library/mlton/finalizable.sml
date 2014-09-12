@@ -32,10 +32,11 @@ fun addFinalizer (T {finalizers, ...}, f) =
 
 val finalize =
    let
+ (* XXX spoons finalizers use global shared state *)
       val r: {clean: unit -> unit,
               isAlive: unit -> bool} list ref = ref []
       fun clean l =
-         List.foldl (fn (z as {clean: unit -> unit, isAlive}, 
+         List.foldl (fn (z as {clean: unit -> unit, isAlive},
                          (gotOne, zs)) =>
                      if isAlive ()
                         then (gotOne, z :: zs)

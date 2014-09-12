@@ -1,5 +1,4 @@
-(* Copyright (C) 2012,2013 Matthew Fluet.
- * Copyright (C) 2002-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2002-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -29,7 +28,7 @@ fun unpackSockAddr (SA sa) = sa
 fun newSockAddr (): (pre_sock_addr * C_Socklen.t ref * (unit -> sock_addr)) = 
    let
       val salen = C_Size.toInt Prim.sockAddrStorageLen
-      val sa = Array.array (salen, 0wx0: Word8.word)
+      val sa = Array.array (salen, 0wx0)
       val salenRef = ref (C_Socklen.fromInt salen)
       fun finish () = 
          SA (ArraySlice.vector 
@@ -68,7 +67,6 @@ structure SOCK =
    struct
       type sock_type = SockType.t
       val toRep = SockType.toRep
-      val fromRep = SockType.fromRep
       val stream = SockType.fromRep Prim.SOCK.STREAM
       val dgram = SockType.fromRep Prim.SOCK.DGRAM
       val names : (string * sock_type) list = 
@@ -93,88 +91,260 @@ structure CtlExtra =
       type optname = C_Int.t
       type request = C_Int.t
 
-      fun getSockOptC_Int (level: level, optname: optname) s : C_Int.t =
+      (* host byte order *)
+      type optvalVec = Word8.word vector
+      type optvalArr = Word8.word array
+
+      val bitsPerByte = 8
+
+      val isBigEndian = Primitive.MLton.Platform.Arch.hostIsBigEndian
+      val intLen = Int.quot (C_Int.precision', bitsPerByte)
+      fun unmarshalInt (wa: optvalArr) : C_Int.int =
          let
-            val optval = ref (C_Int.fromInt 0)
-            val () =
-               Syscall.simple
-               (fn () => Prim.Ctl.getSockOptC_Int (Sock.toRep s, level, optname, optval))
+            fun loop (i, acc) =
+               if i >= intLen
+                  then acc
+                  else let
+                          val w =
+                             Array.sub 
+                             (wa, if isBigEndian
+                                     then i
+                                     else (intLen - 1) - i)
+                          val w = C_Int.castFromSysWord (Word8.castToSysWord w)
+                       in
+                          loop (i + 1, C_Int.orb (w, C_Int.<< (acc, 0w4)))
+                       end
          in
-            ! optval
+            loop (0, 0)
          end
-      fun setSockOptC_Int (level: level, optname: optname) (s, optval: C_Int.t) : unit =
+      fun marshalInt (i: C_Int.int) : optvalVec =
          let
-            val () =
-               Syscall.simple
-               (fn () => Prim.Ctl.setSockOptC_Int (Sock.toRep s, level, optname, optval))
+            val wa = Array.array (intLen, 0wx0)
+            fun loop (i, acc) =
+               if i >= intLen
+                  then ()
+                  else let
+                          val w = Word8.castFromSysWord (C_Int.castToSysWord acc)
+                          val () =
+                             Array.update
+                             (wa, if isBigEndian
+                                     then (intLen - 1) - i
+                                     else i, w)
+                       in
+                          loop (i + 1, C_Int.>> (acc, 0w4))
+                       end
          in
-            ()
+            loop (0, i)
+            ; Array.vector wa
          end
-
-      fun getSockOptBool (level: level, optname: optname) s : bool =
-         if getSockOptC_Int (level, optname) s = 0 then false else true
-      fun setSockOptBool (level: level, optname: optname) (s, optval: bool) : unit =
-         setSockOptC_Int (level, optname) (s, if optval then C_Int.fromInt 1 else C_Int.fromInt 0)
-      fun gsSockOptBool (level: level, optname: optname) =
-         (getSockOptBool (level, optname), setSockOptBool (level, optname))
-
-      fun getSockOptInt (level: level, optname: optname) s : int =
-         C_Int.toInt (getSockOptC_Int (level, optname) s)
-      fun setSockOptInt (level: level, optname: optname) (s, optval: int) : unit =
-         setSockOptC_Int (level, optname) (s, C_Int.fromInt optval)
-      fun gsSockOptInt (level: level, optname: optname) =
-         (getSockOptInt (level, optname), setSockOptInt (level, optname))
-
-      fun getSockOptTimeOption (level: level, optname: optname) s : Time.time option =
+      val boolLen = intLen
+      fun unmarshalBool (wa: optvalArr) : bool =
+         if (unmarshalInt wa) = 0 then false else true
+      fun marshalBool (b: bool) : optvalVec = 
+         marshalInt (if b then 1 else 0)
+      val sizeLen = Int.quot (C_Size.wordSize, bitsPerByte)
+      fun unmarshalSize (wa: optvalArr) : int =
          let
-            val optval_l_onoff = ref (C_Int.fromInt 0)
-            val optval_l_linger = ref (C_Int.fromInt 0)
-            val () =
-               Syscall.simple
-               (fn () => Prim.Ctl.getSockOptC_Linger (Sock.toRep s, level, optname,
-                                                      optval_l_onoff, optval_l_linger))
-
+            fun loop (i, acc) =
+               if i >= sizeLen
+                  then acc
+                  else let
+                          val w =
+                             Array.sub 
+                             (wa, if isBigEndian
+                                     then i
+                                     else (sizeLen - 1) - i)
+                          val w = C_Size.castFromSysWord (Word8.castToSysWord w)
+                       in
+                          loop (i + 1, C_Size.orb (w, C_Size.<< (acc, 0w4)))
+                       end
          in
-            if ! optval_l_onoff = 0
+            C_Size.toInt (loop (0, 0wx0))
+         end
+      fun marshalSize (i: int) : optvalVec =
+         let
+            val wa = Array.array (sizeLen, 0wx0)
+            fun loop (i, acc) =
+               if i >= sizeLen
+                  then ()
+                  else let
+                          val w = Word8.castFromSysWord (C_Size.castToSysWord acc)
+                          val () =
+                             Array.update
+                             (wa, if isBigEndian
+                                     then (sizeLen - 1) - i
+                                     else i, w)
+                       in
+                          loop (i + 1, C_Size.>> (acc, 0w4))
+                       end
+         in
+            loop (0, C_Size.fromInt i)
+            ; Array.vector wa
+         end
+      (* Assume 'struct linger' has no padding. *)
+      val optTimeLen: int = intLen + intLen
+      fun unmarshalOptTime (wa: optvalArr) : Time.time option =
+         let
+            fun loopBool (i, acc) =
+               if i >= intLen
+                  then acc
+                  else let
+                          val w =
+                             Array.sub 
+                             (wa, if isBigEndian
+                                     then i
+                                     else (intLen - 1) - i)
+                          val w = C_Int.castFromSysWord (Word8.castToSysWord w)
+                       in
+                          loopBool (i + 1, C_Int.orb (w, C_Int.<< (acc, 0w4)))
+                       end
+            fun loopInt (i, acc) =
+               if i >= intLen
+                  then acc
+                  else let
+                          val w =
+                             Array.sub 
+                             (wa, intLen + (if isBigEndian
+                                               then i
+                                               else (intLen - 1) - i))
+                          val w = C_Int.castFromSysWord (Word8.castToSysWord w)
+                       in
+                          loopInt (i + 1, C_Int.orb (w, C_Int.<< (acc, 0w4)))
+                       end
+         in
+            if loopBool (0, 0) = 0
                then NONE
-            else SOME (Time.fromSeconds (C_Int.toLarge (! optval_l_linger)))
+               else SOME (Time.fromSeconds (C_Int.toLarge (loopInt (0, 0))))
          end
-      fun setSockOptTimeOption (level: level, optname: optname) (s, optval: Time.time option) : unit =
+      fun marshalOptTime (to: Time.time option) : optvalVec =
          let
-            val (optval_l_onoff, optval_l_linger) =
-               case optval of
-                  NONE => (C_Int.fromInt 0, C_Int.fromInt 0)
-                | SOME t => (C_Int.fromInt 1, C_Int.fromLarge (Time.toSeconds t))
-            val () =
-               Syscall.simple
-               (fn () => Prim.Ctl.setSockOptC_Linger (Sock.toRep s, level, optname,
-                                                      optval_l_onoff, optval_l_linger))
-
+            val wa = Array.array (optTimeLen, 0wx0)
+            fun loopBool (i, acc) =
+               if i >= intLen
+                  then ()
+                  else let
+                          val w = Word8.castFromSysWord (C_Int.castToSysWord acc)
+                          val () =
+                             Array.update
+                             (wa, if isBigEndian
+                                     then (intLen - 1) - i
+                                     else i, w)
+                       in
+                          loopBool (i + 1, C_Int.>> (acc, 0w4))
+                       end
+            fun loopInt (i, acc) =
+               if i >= intLen
+                  then ()
+                  else let
+                          val w = Word8.castFromSysWord (C_Int.castToSysWord acc)
+                          val () =
+                             Array.update
+                             (wa, intLen + (if isBigEndian
+                                               then (intLen - 1) - i
+                                               else i), w)
+                       in
+                          loopInt (i + 1, C_Int.>> (acc, 0w4))
+                       end
          in
-            ()
+            case to of
+               NONE => (loopBool (0, 0); loopInt (0, 0))
+             | SOME t => (loopBool (0, 1); loopInt (0, C_Int.fromLarge (Time.toSeconds t)))
+            ; Array.vector wa
          end
 
-      val (getDEBUG, setDEBUG) = gsSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_DEBUG)
-      val (getREUSEADDR, setREUSEADDR) = gsSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_REUSEADDR)
-      val (getKEEPALIVE, setKEEPALIVE) = gsSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_KEEPALIVE)
-      val (getDONTROUTE, setDONTROUTE) = gsSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_DONTROUTE)
-      val getLINGER = getSockOptTimeOption (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_LINGER)
-      val setLINGER = setSockOptTimeOption (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_LINGER)
-      val (getBROADCAST, setBROADCAST) = gsSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_BROADCAST)
-      val (getOOBINLINE, setOOBINLINE) = gsSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_OOBINLINE)
-      val (getSNDBUF, setSNDBUF) = gsSockOptInt (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_SNDBUF)
-      val (getRCVBUF, setRCVBUF) = gsSockOptInt (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_RCVBUF)
-      fun getTYPE s = SOCK.fromRep (getSockOptC_Int (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_TYPE) s)
+      local
+         fun make (optlen: int,
+                   marshal: 'a -> optvalVec,
+                   unmarshal: optvalArr -> 'a) =
+            let
+               fun getSockOpt (level: level, optname: optname) s : 'a =
+                  let
+                     val optval = Array.array (optlen, 0wx0)
+                     val optlen' = ref (C_Socklen.fromInt optlen)
+                     val () = 
+                        Syscall.simple
+                        (fn () =>
+                         Prim.Ctl.getSockOpt (Sock.toRep s, level, optname, optval, optlen'))
+                     val () =
+                        if C_Socklen.toInt (!optlen') <> optlen
+                           then raise (Fail "Socket.Ctl.getSockOpt: optlen' <> optlen")
+                           else ()
+                  in
+                     unmarshal optval
+                  end
+               fun setSockOpt (level: level, optname: optname) (s, optval: 'a) : unit =
+                  let
+                     val optval = marshal optval
+                     val optlen' = C_Socklen.fromInt optlen
+                     val () =
+                        Syscall.simple
+                        (fn () =>
+                         Prim.Ctl.setSockOpt (Sock.toRep s, level, optname, optval, optlen'))
+                  in
+                     ()
+                  end
+               fun getIOCtl (request: request) s : 'a =
+                  let
+                     val optval = Array.array (optlen, 0wx0)
+                     val () =
+                        Syscall.simple
+                        (fn () =>
+                         Prim.Ctl.getIOCtl (Sock.toRep s, request, optval))
+                  in
+                     unmarshal optval
+                  end
+               fun setIOCtl (request: request) (s, optval: 'a) : unit =
+                  let
+                     val optval = marshal optval
+                     val () =
+                        Syscall.simple
+                        (fn () =>
+                         Prim.Ctl.setIOCtl (Sock.toRep s, request, optval))
+                  in
+                     ()
+                  end
+            in
+               (getSockOpt, getIOCtl, setSockOpt, setIOCtl)
+            end
+      in
+         val (getSockOptInt, getIOCtlInt, setSockOptInt, _) =
+            make (intLen, marshalInt, unmarshalInt)
+         val (getSockOptBool, getIOCtlBool, setSockOptBool, _) =
+            make (boolLen, marshalBool, unmarshalBool)
+         val (getSockOptSize, getIOCtlSize, setSockOptSize, _) =
+            make (sizeLen, marshalSize, unmarshalSize)
+         val (getSockOptOptTime, _, setSockOptOptTime, _) =
+            make (optTimeLen, marshalOptTime, unmarshalOptTime)
+      end
+
+      val getDEBUG = getSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_DEBUG)
+      val setDEBUG = setSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_DEBUG)
+      val getREUSEADDR = getSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_REUSEADDR)
+      val setREUSEADDR = setSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_REUSEADDR)
+      val getKEEPALIVE = getSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_KEEPALIVE)
+      val setKEEPALIVE = setSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_KEEPALIVE)
+      val getDONTROUTE = getSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_DONTROUTE)
+      val setDONTROUTE = setSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_DONTROUTE)
+      val getLINGER = getSockOptOptTime (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_LINGER)
+      val setLINGER = setSockOptOptTime (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_LINGER)
+      val getBROADCAST = getSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_BROADCAST)
+      val setBROADCAST = setSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_BROADCAST)
+      val getOOBINLINE = getSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_OOBINLINE)
+      val setOOBINLINE = setSockOptBool (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_OOBINLINE)
+      val getSNDBUF = getSockOptSize (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_SNDBUF)
+      val setSNDBUF = setSockOptSize (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_SNDBUF)
+      val getRCVBUF = getSockOptSize (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_RCVBUF)
+      val setRCVBUF = setSockOptSize (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_RCVBUF)
+      fun getTYPE s = SockType.fromRep (getSockOptInt (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_TYPE) s)
       fun getERROR s =
          let
-            val se = getSockOptC_Int (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_ERROR) s
+            val se = getSockOptInt (Prim.Ctl.SOL_SOCKET, Prim.Ctl.SO_ERROR) s
             val se = PrePosix.SysError.fromRep se
          in
             if PosixError.cleared = se
                then NONE
                else SOME (Error.errorMsg se, SOME se)
          end handle Error.SysErr z => SOME z
-
       local
          fun getName (s, f: C_Sock.t * pre_sock_addr * C_Socklen.t ref -> C_Int.int C_Errno.t) =
             let
@@ -187,20 +357,8 @@ structure CtlExtra =
          fun getPeerName s = getName (s, Prim.Ctl.getPeerName)
          fun getSockName s = getName (s, Prim.Ctl.getSockName)
       end
-      fun getNREAD s =
-         let
-            val argp = ref (C_Int.fromInt ~1)
-            val () = Syscall.simple (fn () => Prim.Ctl.getNREAD (Sock.toRep s, argp))
-         in
-            C_Int.toInt (!argp)
-         end
-      fun getATMARK s =
-         let
-            val argp = ref (C_Int.fromInt ~1)
-            val () = Syscall.simple (fn () => Prim.Ctl.getATMARK (Sock.toRep s, argp))
-         in
-            if C_Int.toInt (!argp) = 0 then false else true
-         end
+      val getNREAD = getIOCtlSize Prim.Ctl.FIONREAD
+      val getATMARK = getIOCtlBool Prim.Ctl.SIOCATMARK
    end
 
 structure Ctl =
@@ -233,10 +391,8 @@ fun nonBlock (errVal, f, post, no) =
 
 local
    structure PIO = PrimitiveFFI.Posix.IO
-   structure OS = Primitive.MLton.Platform.OS
-   structure MinGW = PrimitiveFFI.MinGW
-   
-   fun withNonBlockNormal (s, f: unit -> 'a) =
+in
+   fun withNonBlock (s, f: unit -> 'a) =
       let
          val fd = Sock.toRep s
          val flags = 
@@ -251,20 +407,6 @@ local
          (f, fn () =>
           Syscall.simpleRestart (fn () => PIO.fcntl3 (fd, PIO.F_SETFL, flags)))
       end
-   
-   fun withNonBlockMinGW (s, f: unit -> 'a) =
-      let
-         val fd = Sock.toRep s
-         val () = MinGW.setNonBlock fd
-      in
-         DynamicWind.wind
-         (f, fn () => MinGW.clearNonBlock fd)
-      end
-in
-   val withNonBlock = fn x =>
-      case OS.host of
-         OS.MinGW => withNonBlockMinGW x
-       | _ => withNonBlockNormal x
 end
 
 fun connect (s, SA sa) =
@@ -326,7 +468,7 @@ fun select {rds: sock_desc list,
          fun mk l =
             let
                val vec = Vector.fromList l
-               val arr = Array.array (Vector.length vec, 0: C_Int.t)
+               val arr = Array.array (Vector.length vec, 0)
             in
                (PrePosix.FileDesc.vectorToRep vec, arr)
             end
@@ -363,8 +505,8 @@ fun select {rds: sock_desc list,
                fun mk (l, arr) = 
                   (List.rev o #1)
                   (List.foldl (fn (sd, (l, i)) =>
-                               (if Array.sub (arr, i) <> (0: C_Int.t) then sd::l else l, i + 1))
-                              ([], 0)
+                               (if Array.sub (arr, i) <> 0 then sd::l else l, i + 1))
+                              ([],0) 
                               l)
             in
                (mk (rds, read_arr),

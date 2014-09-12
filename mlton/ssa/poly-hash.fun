@@ -1,5 +1,4 @@
-(* Copyright (C) 2009-2010 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,10 +6,13 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor PolyHash (S: SSA_TRANSFORM_STRUCTS): SSA_TRANSFORM = 
+functor PolyHash (S: POLY_HASH_STRUCTS): POLY_HASH = 
 struct
 
 open S
+
+type int = Int.t
+type word = Word.t
 
 (*
  * This pass implements polymorphic, structural hashing.
@@ -50,7 +52,9 @@ structure Dexp =
       in
          val add = mk Prim.wordAdd
          val andb = mk Prim.wordAndb
+         val lshift = mk Prim.wordLshift
          val rshift = mk (fn s => Prim.wordRshift (s, {signed = false}))
+         val sub = mk Prim.wordSub
          val xorb = mk Prim.wordXorb
       end
       local
@@ -62,10 +66,16 @@ structure Dexp =
                      ty = Type.word s}
       in
          val mul = mk Prim.wordMul
+         val quot = mk Prim.wordQuot
       end
 
       fun wordEqual (e1: t, e2: t, s): t =
          primApp {prim = Prim.wordEqual s,
+                  targs = Vector.new0 (),
+                  args = Vector.new2 (e1, e2),
+                  ty = Type.bool}
+      fun wordLt (e1: t, e2: t, s, sg): t =
+         primApp {prim = Prim.wordLt (s, {signed = sg}),
                   targs = Vector.new0 (),
                   args = Vector.new2 (e1, e2),
                   ty = Type.bool}
@@ -162,20 +172,17 @@ structure Hash =
             wordBytes
          end
 
-(*
-      (* Jenkins hash function
-       * http://en.wikipedia.org/wiki/Jenkins_hash_function  (20100315)
+      (* Jenkins One-at-a-time hash
+       * http://en.wikipedia.org/wiki/Hash_table
        *) 
-      val {stateTy: Type.t,
-           init: unit -> Dexp.t,
-           wordBytes: Dexp.t * Dexp.t * WordSize.t -> Dexp.t,
-           fini: Dexp.t -> Dexp.t} =
+(*
+      val {stateTy, init, wordBytes, fini} =
          let
             val stateWordSize = resWordSize
             val stateTy = Type.word stateWordSize
             val workWordSize = resWordSize
             val workTy = Type.word workWordSize
-
+               
             local
                fun mk prim =
                   fn (w1, w2) => prim (w1, w2, stateWordSize)
@@ -248,14 +255,10 @@ structure Hash =
              fini = fini}
          end
 *)
-
-      (* FNV-1a hash function
-       * http://en.wikipedia.org/wiki/Fowler-Noll-Vo_hash_function  (20100315)
+      (* Modifed FNV
+       * http://home.comcast.net/~bretm/hash/6.html
        *)
-      val {stateTy: Type.t,
-           init: unit -> Dexp.t,
-           wordBytes: Dexp.t * Dexp.t * WordSize.t -> Dexp.t,
-           fini: Dexp.t -> Dexp.t} =
+      val {stateTy, init, wordBytes, fini} =
          let
             val stateWordSize = resWordSize
             val stateTy = Type.word stateWordSize
@@ -266,14 +269,14 @@ structure Hash =
                fun mk prim =
                   fn (w1, w2) => prim (w1, w2, stateWordSize)
             in
+               val add = mk Dexp.add
+               val lshift = mk Dexp.lshift
                val mul = mk (fn (w1,w2,s) => Dexp.mul (w1,w2,s,{signed = false}))
+               val rshift = mk Dexp.rshift
                val xorb = mk Dexp.xorb
             end
 
-            val fnv_prime = WordX.fromIntInf (16777619, stateWordSize)
-            val fnv_offset_bias = WordX.fromIntInf (2166136261, stateWordSize)
-
-            fun init () = Dexp.word fnv_offset_bias
+            fun init () = Dexp.word (WordX.fromIntInf (2166136261, stateWordSize))
             fun combByte (hexp, wexp) =
                let
                   val h0 = Var.newNoname ()
@@ -293,7 +296,7 @@ structure Hash =
                let
                   val h0 = Var.newNoname ()
                   val dh0 = Dexp.var (h0, stateTy)
-                  val p = Dexp.word fnv_prime
+                  val p = Dexp.word (WordX.fromIntInf (16777619, stateWordSize))
                   val h1 = Var.newNoname ()
                   val dh1 = Dexp.var (h1, stateTy)
                in
@@ -308,7 +311,30 @@ structure Hash =
                 workWordSize = workWordSize,
                 combByte = combByte,
                 mix = mix}
-            fun fini hexp = hexp
+            fun fini hexp =
+               let
+                  val h0 = Var.newNoname ()
+                  val dh0 = Dexp.var (h0, stateTy)
+                  val h1 = Var.newNoname ()
+                  val dh1 = Dexp.var (h1, stateTy)
+                  val h2 = Var.newNoname ()
+                  val dh2 = Dexp.var (h2, stateTy)
+                  val h3 = Var.newNoname ()
+                  val dh3 = Dexp.var (h3, stateTy)
+                  val h4 = Var.newNoname ()
+                  val dh4 = Dexp.var (h4, stateTy)
+                  val h5 = Var.newNoname ()
+                  val dh5 = Dexp.var (h5, stateTy)
+               in
+                  Dexp.lett
+                  {decs = [{var = h0, exp = hexp},
+                           {var = h1, exp = add (dh0, lshift (dh0, Dexp.shiftInt 13))},
+                           {var = h2, exp = xorb (dh1, rshift (dh1, Dexp.shiftInt 7))},
+                           {var = h3, exp = add (dh2, lshift (dh2, Dexp.shiftInt 3))},
+                           {var = h4, exp = xorb (dh3, rshift (dh3, Dexp.shiftInt 17))},
+                           {var = h5, exp = add (dh4, lshift (dh4, Dexp.shiftInt 5))}],
+                   body = dh5}
+               end
          in
             {stateTy = stateTy,
              init = init,
@@ -319,7 +345,7 @@ structure Hash =
          wordBytes (st, Dexp.wordFromWord (w, ws), ws)
    end
 
-fun transform (Program.T {datatypes, globals, functions, main}) =
+fun polyHash (Program.T {datatypes, globals, functions, main}) =
    let
       val {get = funcInfo: Func.t -> {hasHash: bool},
            set = setFuncInfo, ...} =
@@ -362,35 +388,45 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                   val _ = setTyconHashFunc (tycon, SOME name)
                   val ty = Type.datatypee tycon
                   val st = (Var.newNoname (), Hash.stateTy)
+                  val dep = (Var.newNoname (), seqIndexTy)
                   val x = (Var.newNoname (), ty)
-                  val args = Vector.new2 (st, x)
+                  val args = Vector.new3 (st, dep, x)
                   val dst = Dexp.var st
+                  val ddep = Dexp.var dep
                   val dx = Dexp.var x
                   val cons = tyconCons tycon
+                  val dep' = Var.newNoname ()
+                  val ddep' = Dexp.var (dep', seqIndexTy)
                   val body =
-                     Dexp.casee
-                     {test = dx,
-                      ty = Hash.stateTy,
-                      default = NONE,
-                      cases =
-                      (Dexp.Con o Vector.map)
-                      (cons, fn {con, args} =>
-                       let
-                          val xs =
-                             Vector.map
-                             (args, fn ty =>
-                              (Var.newNoname (), ty))
-                       in
-                          {con = con,
-                           args = xs,
-                           body =
-                           Vector.fold
-                           (xs,
-                            Hash.wordBytesFromWord
-                            (dst, Con.hash con, WordSize.word32),
-                            fn ((x,ty), dstate) =>
-                            hashExp (dstate, Dexp.var (x, ty), ty))}
-                       end)}
+                     Dexp.lett
+                     {decs = [{var = dep', exp =
+                               Dexp.sub (ddep, 
+                                         Dexp.word (WordX.one seqIndexWordSize), 
+                                         seqIndexWordSize)}],
+                      body =
+                      Dexp.casee
+                      {test = dx,
+                       ty = Hash.stateTy,
+                       default = NONE,
+                       cases =
+                       (Dexp.Con o Vector.map)
+                       (cons, fn {con, args} =>
+                        let
+                           val xs =
+                              Vector.map 
+                              (args, fn ty =>
+                               (Var.newNoname (), ty))
+                        in
+                           {con = con,
+                            args = xs,
+                            body = 
+                            Vector.fold
+                            (xs, 
+                             Hash.wordBytesFromWord
+                             (dst, Con.hash con, WordSize.word32),
+                             fn ((x,ty), dstate) => 
+                             hashExp (dstate, ddep', Dexp.var (x, ty), ty))}
+                        end)}}
                   val (start, blocks) = Dexp.linearize (body, Handler.Caller)
                   val blocks = Vector.fromList blocks
                   val _ =
@@ -418,25 +454,71 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                   val vty = Type.vector ty
                   local
                      val st = (Var.newNoname (), Hash.stateTy)
+                     val dep = (Var.newNoname (), seqIndexTy)
                      val vec = (Var.newNoname (), vty)
-                     val args = Vector.new2 (st, vec)
+                     val args = Vector.new3 (st, dep, vec)
                      val dst = Dexp.var st
+                     val ddep = Dexp.var dep
                      val dvec = Dexp.var vec
                      val len = (Var.newNoname (), seqIndexTy)
                      val dlen = Dexp.var len
+                     val maxstepTy = Type.tuple (Vector.new2 (seqIndexTy, seqIndexTy)) 
+                     val maxstep = (Var.newNoname (), maxstepTy)
+                     val dmaxstep = Dexp.var maxstep
                      val body =
                         Dexp.lett
                         {decs = [{var = #1 len, exp = 
                                   Dexp.primApp {prim = Prim.vectorLength,
                                                 targs = Vector.new1 ty,
                                                 args = Vector.new1 dvec,
-                                                ty = seqIndexTy}}],
+                                                ty = seqIndexTy}},
+                                 {var = #1 maxstep, exp =
+                                  Dexp.casee
+                                  {test = Dexp.wordLt (dlen, ddep, seqIndexWordSize, true),
+                                   ty = maxstepTy,
+                                   default = NONE,
+                                   cases =
+                                   (Dexp.Con o Vector.new2)
+                                   ({con = Con.truee,
+                                     args = Vector.new0 (),
+                                     body = 
+                                     Dexp.tuple
+                                     {exps = Vector.new2 
+                                             (dlen, 
+                                              Dexp.word (WordX.one seqIndexWordSize)),
+                                      ty = maxstepTy}},
+                                    {con = Con.falsee,
+                                     args = Vector.new0 (),
+                                     body = 
+                                     let
+                                        val step = (Var.newNoname (), seqIndexTy)
+                                        val dstep = Dexp.var step
+                                        val max = (Var.newNoname (), seqIndexTy)
+                                        val dmax = Dexp.var max
+                                     in
+                                        Dexp.lett
+                                        {decs = [{var = #1 step, exp =
+                                                  Dexp.quot (dlen,
+                                                             ddep,
+                                                             seqIndexWordSize,
+                                                             {signed = true})},
+                                                 {var = #1 max, exp = 
+                                                  Dexp.mul (dstep,
+                                                            ddep,
+                                                            seqIndexWordSize,
+                                                            {signed = true})}],
+                                         body = Dexp.tuple {exps = Vector.new2 (dmax, dstep),
+                                                            ty = maxstepTy}}
+                                     end})}}],
                          body =
                          Dexp.call
                          {func = loop,
-                          args = (Vector.new4
+                          args = (Vector.new6
                                   (Hash.wordBytes (dst, dlen, seqIndexWordSize),
-                                   dvec, dlen, Dexp.word (WordX.zero seqIndexWordSize))),
+                                   ddep, dvec, 
+                                   Dexp.select {offset = 0, tuple = dmaxstep, ty = seqIndexTy},
+                                   Dexp.select {offset = 1, tuple = dmaxstep, ty = seqIndexTy},
+                                   Dexp.word (WordX.zero seqIndexWordSize))),
                           ty = Hash.stateTy}}
                      val (start, blocks) = Dexp.linearize (body, Handler.Caller)
                      val blocks = Vector.fromList blocks
@@ -452,34 +534,43 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                   end
                   local
                      val st = (Var.newNoname (), Hash.stateTy)
+                     val dep = (Var.newNoname (), seqIndexTy)
                      val vec = (Var.newNoname (), vty)
-                     val len = (Var.newNoname (), seqIndexTy)
+                     val max = (Var.newNoname (), seqIndexTy)
+                     val step = (Var.newNoname (), seqIndexTy)
                      val i = (Var.newNoname (), seqIndexTy)
-                     val args = Vector.new4 (st, vec, len, i)
+                     val args = Vector.new6 (st, dep, vec, max, step, i)
                      val dst = Dexp.var st
+                     val ddep = Dexp.var dep
                      val dvec = Dexp.var vec
-                     val dlen = Dexp.var len
+                     val dmax = Dexp.var max
+                     val dstep = Dexp.var step
                      val di = Dexp.var i
                      val body =
                         let
                            val args =
-                              Vector.new4
+                              Vector.new6
                               (hashExp 
                                (dst, 
+                                Dexp.sub (ddep, 
+                                          Dexp.word (WordX.one seqIndexWordSize), 
+                                          seqIndexWordSize), 
                                 Dexp.primApp {prim = Prim.vectorSub,
                                               targs = Vector.new1 ty,
                                               args = Vector.new2 (dvec, di),
                                               ty = ty},
                                 ty),
+                               ddep,
                                dvec, 
-                               dlen,
+                               dmax,
+                               dstep,
                                Dexp.add (di, 
-                                         Dexp.word (WordX.one seqIndexWordSize),
+                                         dstep,
                                          seqIndexWordSize))
                         in
                            Dexp.casee
                            {test = Dexp.wordEqual
-                                   (di, dlen, seqIndexWordSize),
+                                   (di, dmax, seqIndexWordSize),
                             ty = Hash.stateTy,
                             default = NONE,
                             cases = (Dexp.Con o Vector.new2)
@@ -507,12 +598,14 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                in
                   name
                end
-      and hashExp (st: Dexp.t, x: Dexp.t, ty: Type.t): Dexp.t =
+      and hashExp (st: Dexp.t, dep: Dexp.t, x: Dexp.t, ty: Type.t): Dexp.t =
          Dexp.name (st, fn st =>
-         Dexp.name (x, fn x => hash (st, x, ty)))
-      and hash (st: Var.t, x: Var.t, ty: Type.t): Dexp.t =
+         Dexp.name (dep, fn dep =>
+         Dexp.name (x, fn x => hash (st, dep, x, ty))))
+      and hash (st: Var.t, dep: Var.t, x: Var.t, ty: Type.t): Dexp.t =
          let
             val dst = Dexp.var (st, Hash.stateTy)
+            val ddep = Dexp.var (dep, seqIndexTy)
             val dx = Dexp.var (x, ty)
             fun stateful () =
                Hash.wordBytesFromWord
@@ -535,7 +628,7 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                      end
                 | Type.Datatype tycon =>
                      Dexp.call {func = hashTyconFunc tycon,
-                                args = Vector.new2 (dst, dx),
+                                args = Vector.new3 (dst, ddep, dx),
                                 ty = Hash.stateTy}
                 | Type.IntInf => 
                      let
@@ -573,7 +666,7 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                             args = Vector.new0 (),
                             body = 
                             Dexp.call {func = vectorHashFunc (Type.word bws),
-                                       args = Vector.new2 (dst, toVector),
+                                       args = Vector.new3 (dst, ddep, toVector),
                                        ty = Hash.stateTy}})}}
                      end
                 | Type.Real rs =>
@@ -593,7 +686,7 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                 | Type.Tuple tys =>
                      let
                         val max = Vector.length tys - 1
-                        (* hash components i, i+1, ... *)
+                        (* test components i, i+1, ... *)
                         fun loop (i: int, dst): Dexp.t =
                            if i > max
                               then dst
@@ -606,19 +699,32 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                                 in
                                    loop
                                    (i + 1,
-                                    hashExp (dst, select, ty))
+                                    hashExp (dst, ddep, select, ty))
                                 end
                      in
                         loop (0, dst)
                      end
                 | Type.Vector ty =>
                      Dexp.call {func = vectorHashFunc ty,
-                                args = Vector.new2 (dst, dx),
+                                args = Vector.new3 (dst, ddep, dx),
                                 ty = Hash.stateTy}
                 | Type.Weak _ => stateful ()
                 | Type.Word ws => Hash.wordBytes (dst, dx, ws)
          in
-            body
+            Dexp.casee
+            {test = Dexp.wordEqual (ddep,
+                                    Dexp.word (WordX.zero seqIndexWordSize),
+                                    seqIndexWordSize),
+             ty = Hash.stateTy,
+             default = NONE,
+             cases =
+             (Dexp.Con o Vector.new2)
+             ({con = Con.truee,
+               args = Vector.new0 (),
+               body = dst},
+              {con = Con.falsee,
+               args = Vector.new0 (),
+               body = body})}
          end
       fun hashFunc (ty: Type.t): Func.t =
          case getHashFunc ty of
@@ -627,10 +733,12 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                let
                   val name = Func.newString "hash"
                   val _ = setHashFunc (ty, SOME name)
+                  val dep = (Var.newNoname (), seqIndexTy)
                   val x = (Var.newNoname (), ty)
-                  val args = Vector.new1 x
+                  val args = Vector.new2 (dep, x)
                   val sti = Var.newNoname ()
                   val dsti = Dexp.var (sti, Hash.stateTy)
+                  val ddep = Dexp.var dep
                   val dx = Dexp.var x
                   val stf = Var.newNoname ()
                   val dstf = Dexp.var (stf, Hash.stateTy)
@@ -639,7 +747,7 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                   val body = 
                      Dexp.lett
                      {decs = [{var = sti, exp = Hash.init ()},
-                              {var = stf, exp = hashExp (dsti, dx, ty)},
+                              {var = stf, exp = hashExp (dsti, ddep, dx, ty)},
                               {var = w, exp = Hash.fini dstf}],
                       body = dw}
                   val (start, blocks) = Dexp.linearize (body, Handler.Caller)
@@ -717,12 +825,13 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                                    (Prim.Name.MLton_hash, 1) =>
                                       let
                                          val ty = Vector.sub (targs, 0)
-                                         val x = Vector.sub (args, 0)
+                                         val dep = Vector.sub (args, 0)
+                                         val x = Vector.sub (args, 1)
                                          val l = Label.newNoname ()
                                       in
                                         (finish 
                                          (las, 
-                                          Call {args = Vector.new1 x,
+                                          Call {args = Vector.new2 (dep, x),
                                                 func = hashFunc ty,
                                                 return = Return.NonTail 
                                                          {cont = l,

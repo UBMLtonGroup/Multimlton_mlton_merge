@@ -1,5 +1,4 @@
-/* Copyright (C) 2009-2012 Matthew Fluet.
- * Copyright (C) 2005-2008 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 2005-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -13,12 +12,16 @@ void displayHeap (__attribute__ ((unused)) GC_state s,
           "\t\tnursery = "FMTPTR"\n"
           "\t\toldGenSize = %"PRIuMAX"\n"
           "\t\tsize = %"PRIuMAX"\n"
+          "\t\tavailableSize = %zu\n"
           "\t\tstart = "FMTPTR"\n"
+          "\t\tfrontier = "FMTPTR"\n"
           "\t\twithMapsSize = %"PRIuMAX"\n",
           (uintptr_t)heap->nursery,
           (uintmax_t)heap->oldGenSize,
           (uintmax_t)heap->size,
+          (uintmax_t)heap->availableSize,
           (uintptr_t)heap->start,
+          (uintptr_t)heap->frontier,
           (uintmax_t)heap->withMapsSize);
 }
 
@@ -28,7 +31,9 @@ void initHeap (__attribute__ ((unused)) GC_state s,
   h->nursery = NULL;
   h->oldGenSize = 0;
   h->size = 0;
+  h->availableSize = h->size;
   h->start = NULL;
+  h->frontier = NULL;
   h->withMapsSize = 0;
 }
 
@@ -38,117 +43,86 @@ void initHeap (__attribute__ ((unused)) GC_state s,
  * given that the current heap size is cs.
  */
 size_t sizeofHeapDesired (GC_state s, size_t liveSize, size_t currentSize) {
-  size_t liveMapsSize, liveWithMapsSize;
-  size_t currentMapsSize, currentWithMapsSize;
-  size_t resSize, resWithMapsSize;
-  size_t syslimSize, syslimWithMapsSize;
-  LOCAL_USED_FOR_ASSERT size_t syslimMapsSize;
-  double ratio;
-
-  syslimWithMapsSize = alignDown (SIZE_MAX, s->sysvals.pageSize);
-  syslimSize = invertSizeofCardMapAndCrossMap (s, syslimWithMapsSize);
-  syslimMapsSize = sizeofCardMapAndCrossMap (s, syslimSize);
-  assert (syslimSize + syslimMapsSize <= syslimWithMapsSize);
+  size_t liveWithMapsSize;
+  size_t res;
+  float withMapsRatio;
 
   liveSize = align (liveSize, s->sysvals.pageSize);
-  if (syslimSize < liveSize)
-    die ("Out of memory with system-limit heap size %s.\n",
-         uintmaxToCommaString(syslimSize));
-  liveMapsSize = sizeofCardMapAndCrossMap (s, liveSize);
-  liveWithMapsSize = liveSize + liveMapsSize;
+  liveWithMapsSize = liveSize + sizeofCardMapAndCrossMap (s, liveSize);
 
-  assert (isAligned (currentSize, s->sysvals.pageSize));
-  currentMapsSize = sizeofCardMapAndCrossMap (s, currentSize);
-  currentWithMapsSize = currentSize + currentMapsSize;
-
-  ratio = (double)s->sysvals.ram / (double)liveWithMapsSize;
-
-  if (ratio >= s->controls.ratios.live + s->controls.ratios.grow) {
+  withMapsRatio = (float)s->sysvals.ram / (float)liveWithMapsSize;
+  if (withMapsRatio >= s->controls->ratios.live + s->controls->ratios.grow) {
     /* Cheney copying fits in RAM with desired ratios.live. */
-    resWithMapsSize = (size_t)(liveWithMapsSize * s->controls.ratios.live);
+    res = liveSize * s->controls->ratios.live;
     /* If the heap is currently close in size to what we want, leave
      * it alone.  Favor growing over shrinking.
      */
-    if (0.5 * currentWithMapsSize <= resWithMapsSize
-        and resWithMapsSize <= 1.1 * currentWithMapsSize) {
-      resWithMapsSize = currentWithMapsSize;
-    } else {
-      resWithMapsSize = align (resWithMapsSize, s->sysvals.pageSize);
-    }
-  } else if (s->controls.ratios.grow >= s->controls.ratios.copy
-             and ratio >= 2.0 * s->controls.ratios.copy) {
+    unless (1.1 * currentSize <= res
+            or res <= .5 * currentSize)
+      res = currentSize;
+  } else if (s->controls->ratios.grow >= s->controls->ratios.copy
+             and withMapsRatio >= 2 * s->controls->ratios.copy) {
     /* Split RAM in half.  Round down by pageSize so that the total
      * amount of space taken isn't greater than RAM once rounding
      * happens.  This is so resizeHeapSecondary doesn't get confused
      * and free a semispace in a misguided attempt to avoid paging.
      */
-    resWithMapsSize = alignDown (s->sysvals.ram / 2, s->sysvals.pageSize);
-  } else if (ratio >= s->controls.ratios.copy + s->controls.ratios.grow) {
+    res = alignDown (s->sysvals.ram / 2, s->sysvals.pageSize);
+  } else if (withMapsRatio >= s->controls->ratios.copy + s->controls->ratios.grow) {
     /* Cheney copying fits in RAM. */
-    resWithMapsSize = s->sysvals.ram - (size_t)(s->controls.ratios.grow * liveWithMapsSize);
+    res = s->sysvals.ram - s->controls->ratios.grow * liveSize;
     /* If the heap isn't too much smaller than what we want, leave it
-     * alone.  On the other hand, if it is bigger we want to leave
-     * resWithMapsSize as is so that the heap is shrunk, to try to
-     * avoid paging.
+     * alone.  On the other hand, if it is bigger we want to leave res
+     * as is so that the heap is shrunk, to try to avoid paging.
      */
-    if (1.0 * currentWithMapsSize <= resWithMapsSize
-        and resWithMapsSize <= 1.1 * currentWithMapsSize) {
-      resWithMapsSize = currentWithMapsSize;
-    } else {
-      resWithMapsSize = align (resWithMapsSize, s->sysvals.pageSize);
-    }
-  } else if (ratio >= s->controls.ratios.markCompact) {
+    if (currentSize <= res
+        and res <= 1.1 * currentSize)
+      res = currentSize;
+  } else if (withMapsRatio >= s->controls->ratios.markCompact) {
     /* Mark compact fits in RAM.  It doesn't matter what the current
      * size is.  If the heap is currently smaller, we are using
      * copying and should switch to mark-compact.  If the heap is
      * currently bigger, we want to shrink back to RAM to avoid
      * paging.
      */
-    resWithMapsSize = s->sysvals.ram;
+    res = s->sysvals.ram;
   } else { /* Required live ratio. */
-    double resWithMapsSizeD = liveWithMapsSize * (double)(s->controls.ratios.markCompact);
-    if (resWithMapsSizeD > (double)syslimWithMapsSize) {
-      resWithMapsSize = syslimWithMapsSize;
-    } else {
-      resWithMapsSize = align ((size_t)resWithMapsSizeD, s->sysvals.pageSize);
-    }
-    /* If the current heap is bigger than resWithMapsSize, then
-     * shrinking always sounds like a good idea.  However, depending
-     * on what pages the VM keeps around, growing could be very
-     * expensive, if it involves paging the entire heap.  Hopefully
-     * the copy loop in growHeap will make the right thing happen.
+    res = liveSize * s->controls->ratios.markCompact;
+    /* If the current heap is bigger than res, then shrinking always
+     * sounds like a good idea.  However, depending on what pages the
+     * VM keeps around, growing could be very expensive, if it
+     * involves paging the entire heap.  Hopefully the copy loop in
+     * growHeap will make the right thing happen.
      */
   }
-  if (s->controls.fixedHeap > 0) {
-    if (resWithMapsSize > s->controls.fixedHeap / 2)
-      resWithMapsSize = s->controls.fixedHeap;
+  if (s->controls->fixedHeap > 0) {
+    if (res > s->controls->fixedHeap / 2)
+      res = s->controls->fixedHeap;
     else
-      resWithMapsSize = s->controls.fixedHeap / 2;
-    if (resWithMapsSize < liveWithMapsSize)
+      res = s->controls->fixedHeap / 2;
+    if (res < liveSize)
       die ("Out of memory with fixed heap size %s.",
-           uintmaxToCommaString(s->controls.fixedHeap));
-  } else if (s->controls.maxHeap > 0) {
-    if (resWithMapsSize > s->controls.maxHeap)
-      resWithMapsSize = s->controls.maxHeap;
-    if (resWithMapsSize < liveWithMapsSize)
+           uintmaxToCommaString(s->controls->fixedHeap));
+  } else if (s->controls->maxHeap > 0) {
+    if (res > s->controls->maxHeap)
+      res = s->controls->maxHeap;
+    if (res < liveSize)
       die ("Out of memory with max heap size %s.",
-           uintmaxToCommaString(s->controls.maxHeap));
+           uintmaxToCommaString(s->controls->maxHeap));
   }
-  resSize = invertSizeofCardMapAndCrossMap (s, resWithMapsSize);
-  assert (isAligned (resSize, s->sysvals.pageSize));
   if (DEBUG_RESIZING)
     fprintf (stderr, "%s = sizeofHeapDesired (%s, %s)\n",
-             uintmaxToCommaString(resSize),
+             uintmaxToCommaString(res),
              uintmaxToCommaString(liveSize),
              uintmaxToCommaString(currentSize));
-  assert (resSize >= liveSize);
-  return resSize;
+  assert (res >= liveSize);
+  return res;
 }
 
 void releaseHeap (GC_state s, GC_heap h) {
   if (NULL == h->start)
     return;
-  if (DEBUG or s->controls.messages)
+  if (DEBUG or s->controls->messages)
     fprintf (stderr,
              "[GC: Releasing heap at "FMTPTR" of size %s bytes (+ %s bytes card/cross map).]\n",
              (uintptr_t)(h->start),
@@ -170,9 +144,9 @@ void shrinkHeap (GC_state s, GC_heap h, size_t keepSize) {
   if (keepSize < h->size) {
     size_t keepWithMapsSize;
     keepWithMapsSize = keepSize + sizeofCardMapAndCrossMap (s, keepSize);
-    if (DEBUG or s->controls.messages) {
+    if (DEBUG or s->controls->messages) {
       fprintf (stderr,
-               "[GC: Shrinking heap at "FMTPTR" of size %s bytes (+ %s bytes card/cross map)]\n",
+               "[GC: Shrinking heap at "FMTPTR" of size %s bytes (+ %s bytes card/cross map),]\n",
                (uintptr_t)(h->start),
                uintmaxToCommaString(h->size),
                uintmaxToCommaString(h->withMapsSize - h->size));
@@ -181,7 +155,6 @@ void shrinkHeap (GC_state s, GC_heap h, size_t keepSize) {
                uintmaxToCommaString(keepSize),
                uintmaxToCommaString(keepWithMapsSize - keepSize));
     }
-    assert (isAligned (keepWithMapsSize, s->sysvals.pageSize));
     assert (keepWithMapsSize <= h->withMapsSize);
     GC_release (h->start + keepWithMapsSize, h->withMapsSize - keepWithMapsSize);
     h->size = keepSize;
@@ -199,6 +172,7 @@ void shrinkHeap (GC_state s, GC_heap h, size_t keepSize) {
 bool createHeap (GC_state s, GC_heap h,
                  size_t desiredSize,
                  size_t minSize) {
+  size_t backoff;
   size_t newSize;
   size_t newWithMapsSize;
 
@@ -206,58 +180,60 @@ bool createHeap (GC_state s, GC_heap h,
     fprintf (stderr, "createHeap  desired size = %s  min size = %s\n",
              uintmaxToCommaString(desiredSize),
              uintmaxToCommaString(minSize));
+  assert (isHeapInit (h));
   if (desiredSize < minSize)
     desiredSize = minSize;
   minSize = align (minSize, s->sysvals.pageSize);
   desiredSize = align (desiredSize, s->sysvals.pageSize);
-  assert (isHeapInit (h) and NULL == h->start);
-  /* Biased binary search (between minSize and desiredSize) for a
-   * successful mmap.
-   * Toggle back and forth between high and low addresses to decrease
-   * the chance of virtual memory fragmentation; important for large
-   * heaps.
-   * Always try a NULL address last.
+  assert (0 == h->size and NULL == h->start);
+  backoff = (desiredSize - minSize) / 16;
+  if (0 == backoff)
+    backoff = 1; /* enough to terminate the loop below */
+  backoff = align (backoff, s->sysvals.pageSize);
+  /* mmap toggling back and forth between high and low addresses to
+   * decrease the chance of virtual memory fragmentation causing an mmap
+   * to fail.  This is important for large heaps.
+   * Note that the loop always trys a NULL address last.
    */
-  size_t factor = 16;
-  const size_t maxFactor = s->sysvals.pageSize;
-  size_t lowSize = minSize;
-  size_t highSize = desiredSize;
-  newSize = highSize;
-  unsigned int loopCount = 0;
-  while (lowSize <= highSize) {
-    pointer newStart;
+  newSize = desiredSize;
+  do {
+    const unsigned int countLog2 = 5;
+    const unsigned int count = 0x1 << countLog2;
+    const size_t step = (size_t)0x1 << (ADDRESS_BITS - countLog2);
+#if ADDRESS_BITS == POINTER_BITS
+    const size_t address_end = 0;
+#else
+    const size_t address_end = (size_t)0x1 << ADDRESS_BITS;
+#endif
+
+    static bool direction = TRUE;
+    unsigned int i;
 
     newWithMapsSize = newSize + sizeofCardMapAndCrossMap (s, newSize);
 
     assert (isAligned (newWithMapsSize, s->sysvals.pageSize));
 
-    const unsigned int addressCountLog2 = 5;
-    const unsigned int addressCount = 0x1 << addressCountLog2;
-    const size_t addressStep = (size_t)0x1 << (ADDRESS_BITS - addressCountLog2);
-#if ADDRESS_BITS == POINTER_BITS
-    const size_t addressHigh = 0;
-#else
-    const size_t addressHigh = (size_t)0x1 << ADDRESS_BITS;
-#endif
-    static bool addressScanDir = TRUE;
-    for (unsigned int i = 1; i <= addressCount; i++) {
-      size_t address = (size_t)i * addressStep;
-      if (addressScanDir)
-        address = addressHigh - address;
+    for (i = 1; i <= count; i++) {
+      size_t address;
+      pointer newStart;
+
+      address = (size_t)i * step;
+      if (direction)
+        address = address_end - address;
       /* Always use 0 in the last step. */
-      if (i == addressCount)
+      if (i == count)
         address = 0;
 
       newStart = GC_mmapAnon ((pointer)address, newWithMapsSize);
       unless ((void*)-1 == newStart) {
-        addressScanDir = not addressScanDir;
+        direction = not direction;
         h->start = newStart;
         h->size = newSize;
         h->withMapsSize = newWithMapsSize;
-        if (h->size > s->cumulativeStatistics.maxHeapSize)
-          s->cumulativeStatistics.maxHeapSize = h->size;
+        if (h->size > s->cumulativeStatistics->maxHeapSize)
+          s->cumulativeStatistics->maxHeapSize = h->size;
         assert (minSize <= h->size and h->size <= desiredSize);
-        if (DEBUG or s->controls.messages)
+        if (DEBUG or s->controls->messages)
           fprintf (stderr,
                    "[GC: Created heap at "FMTPTR" of size %s bytes (+ %s bytes card/cross map).]\n",
                    (uintptr_t)(h->start),
@@ -266,64 +242,51 @@ bool createHeap (GC_state s, GC_heap h,
         return TRUE;
       }
     }
-    size_t prevSize = newSize;
-    size_t prevWithMapsSize = newWithMapsSize;
-    highSize = newSize - s->sysvals.pageSize;
-    newSize = align((factor-1) * (highSize / factor) + (lowSize / factor), s->sysvals.pageSize);
-    if (s->controls.messages) {
+    if (s->controls->messages) {
       fprintf (stderr,
                "[GC: Creating heap of size %s bytes (+ %s bytes card/cross map) cannot be satisfied,]\n",
-               uintmaxToCommaString (prevSize),
-               uintmaxToCommaString (prevWithMapsSize - prevSize));
+               uintmaxToCommaString (newSize),
+               uintmaxToCommaString (newWithMapsSize - newSize));
       fprintf (stderr,
                "[GC:\tbacking off by %s bytes with minimum size of %s bytes.]\n",
-               uintmaxToCommaString (prevSize - newSize),
+               uintmaxToCommaString (backoff),
                uintmaxToCommaString (minSize));
     }
-    if (factor < maxFactor
-        and ++loopCount % 64 == 0) {
-      factor += factor;
+    size_t nextSize = newSize - backoff;
+    if (nextSize < minSize and minSize < newSize) {
+      newSize = minSize;
+    } else {
+      newSize = nextSize;
     }
-  }
+  } while (newSize >= minSize);
   return FALSE;
 }
 
 /* createHeapSecondary (s, desiredSize)
  */
 bool createHeapSecondary (GC_state s, size_t desiredSize) {
-  size_t desiredWithMapsSize;
-  size_t minSize, minWithMapsSize;
-  desiredWithMapsSize = desiredSize + sizeofCardMapAndCrossMap (s, desiredSize);
-  if ((s->controls.fixedHeap > 0
-       and s->heap.withMapsSize + desiredWithMapsSize > s->controls.fixedHeap)
-      or (s->controls.maxHeap > 0
-          and s->heap.withMapsSize + desiredWithMapsSize > s->controls.maxHeap))
+  if ((s->controls->fixedHeap > 0
+       and s->heap->size + desiredSize > s->controls->fixedHeap)
+      or (s->controls->maxHeap > 0
+          and s->heap->size + desiredSize > s->controls->maxHeap))
     return FALSE;
-  minSize = align (s->heap.oldGenSize, s->sysvals.pageSize);
-  minWithMapsSize = minSize + sizeofCardMapAndCrossMap (s, minSize);
-  if (minWithMapsSize > SIZE_MAX - s->heap.withMapsSize)
-    return FALSE;
-  return createHeap (s, &s->secondaryHeap, desiredSize, s->heap.oldGenSize);
+  return createHeap (s, s->secondaryHeap, desiredSize, s->heap->oldGenSize);
 }
 
 /* remapHeap (s, h, desiredSize, minSize)
  */
-#if not HAS_REMAP
-bool remapHeap (__attribute__ ((unused)) GC_state s,
-                __attribute__ ((unused)) GC_heap h,
-                __attribute__ ((unused)) size_t desiredSize,
-                __attribute__ ((unused)) size_t minSize) {
-  return FALSE;
-}
-#else
 bool remapHeap (GC_state s, GC_heap h,
                 size_t desiredSize,
                 size_t minSize) {
-
+  size_t backoff;
   size_t newSize;
   size_t newWithMapsSize;
-  int result;
+  size_t origSize;
+  size_t origWithMapsSize;
 
+#if not HAS_REMAP
+  return FALSE;
+#endif
   if (DEBUG_MEM)
     fprintf (stderr, "remapHeap  desired size = %s  min size = %s\n",
              uintmaxToCommaString(desiredSize),
@@ -332,79 +295,55 @@ bool remapHeap (GC_state s, GC_heap h,
   assert (desiredSize >= h->size);
   minSize = align (minSize, s->sysvals.pageSize);
   desiredSize = align (desiredSize, s->sysvals.pageSize);
-
-  /* Biased binary search (between minSize and desiredSize) for a
-   * successful mremap.
-   */
-  size_t factor = 16;
-  size_t lowSize = minSize;
-  size_t highSize = desiredSize;
-  newSize = highSize;
-  result = FALSE;
-  while (lowSize <= highSize) {
+  backoff = (desiredSize - minSize) / 16;
+  if (0 == backoff)
+    backoff = 1; /* enough to terminate the loop below */
+  backoff = align (backoff, s->sysvals.pageSize);
+  origSize = h->size;
+  origWithMapsSize = origSize + sizeofCardMapAndCrossMap (s, origSize);
+  newSize = desiredSize;
+  do {
     pointer newStart;
 
     newWithMapsSize = newSize + sizeofCardMapAndCrossMap (s, newSize);
 
     assert (isAligned (newWithMapsSize, s->sysvals.pageSize));
 
-    newStart = GC_mremap (h->start, h->withMapsSize, newWithMapsSize);
-    if ((void*)-1 != newStart) {
-      pointer origStart = h->start;
-      size_t origSize = h->size;
-      size_t origWithMapsSize = h->withMapsSize;
+    newStart = GC_mremap (h->start, origWithMapsSize, newWithMapsSize);
+    unless ((void*)-1 == newStart) {
       h->start = newStart;
       h->size = newSize;
       h->withMapsSize = newWithMapsSize;
-      if (h->size > s->cumulativeStatistics.maxHeapSize)
-        s->cumulativeStatistics.maxHeapSize = h->size;
+      if (h->size > s->cumulativeStatistics->maxHeapSize)
+        s->cumulativeStatistics->maxHeapSize = h->size;
       assert (minSize <= h->size and h->size <= desiredSize);
-      if (DEBUG or s->controls.messages) {
+      if (DEBUG or s->controls->messages)
         fprintf (stderr,
-                 "[GC: Remapped heap at "FMTPTR" of size %s bytes (+ %s bytes card/cross map)]\n",
-                 (uintptr_t)origStart,
-                 uintmaxToCommaString(origSize),
-                 uintmaxToCommaString(origWithMapsSize - origSize));
-        fprintf (stderr,
-                 "[GC:\tto heap at "FMTPTR" of size %s bytes (+ %s bytes card/cross map).]\n",
+                 "[GC: Remapped heap at "FMTPTR" to size %s bytes (+ %s bytes card/cross map).]\n",
                  (uintptr_t)(h->start),
                  uintmaxToCommaString(h->size),
                  uintmaxToCommaString(h->withMapsSize - h->size));
-      }
-      lowSize = newSize + s->sysvals.pageSize;
-      newSize = align((factor-1) * (highSize / factor) + (lowSize / factor), s->sysvals.pageSize);
-      result = TRUE;
-    } else {
-      size_t prevSize = newSize;
-      size_t prevWithMapsSize = newWithMapsSize;
-      highSize = newSize - s->sysvals.pageSize;
-      newSize = align((factor-1) * (highSize / factor) + (lowSize / factor), s->sysvals.pageSize);
-      if (s->controls.messages) {
-        fprintf (stderr,
-                 "[GC: Remapping heap at "FMTPTR" of size %s bytes (+ %s bytes card/cross map)]\n",
-                 (uintptr_t)(h->start),
-                 uintmaxToCommaString (h->size),
-                 uintmaxToCommaString (h->withMapsSize - h->size));
-        fprintf (stderr,
-                 "[GC:\tto heap of size %s bytes (+ %s bytes card/cross map) cannot be satisfied,]\n",
-                 uintmaxToCommaString (prevSize),
-                 uintmaxToCommaString (prevWithMapsSize - prevSize));
-        if (result) {
-          fprintf (stderr,
-                   "[GC:\tbacking off by %s bytes.]\n",
-                   uintmaxToCommaString (prevSize - newSize));
-        } else {
-          fprintf (stderr,
-                   "[GC:\tbacking off by %s bytes with minimum size of %s bytes.]\n",
-                   uintmaxToCommaString (prevSize - newSize),
-                   uintmaxToCommaString (minSize));
-        }
-      }
+      return TRUE;
     }
-  }
-  return result;
+    if (s->controls->messages) {
+      fprintf (stderr,
+               "[GC: Remapping heap to size %s bytes (+ %s bytes card/cross map) cannot be satisfied,]\n",
+               uintmaxToCommaString (newSize),
+               uintmaxToCommaString (newWithMapsSize - newSize));
+      fprintf (stderr,
+               "[GC:\tbacking off by %s bytes with minimum size of %s bytes.]\n",
+               uintmaxToCommaString (backoff),
+               uintmaxToCommaString (minSize));
+    }
+    size_t nextSize = newSize - backoff;
+    if (nextSize < minSize and minSize < newSize) {
+      newSize = minSize;
+    } else {
+      newSize = nextSize;
+    }
+  } while (newSize >= minSize);
+  return FALSE;
 }
-#endif
 
 enum {
   COPY_CHUNK_SIZE = 0x2000000, /* 32M */
@@ -421,32 +360,26 @@ void growHeap (GC_state s, size_t desiredSize, size_t minSize) {
   pointer origStart;
   size_t liveSize;
 
-  assert (isAligned (desiredSize, s->sysvals.pageSize));
-  assert (isAligned (minSize, s->sysvals.pageSize));
-  assert (desiredSize >= s->heap.size);
-  if (DEBUG_RESIZING or s->controls.messages) {
+  assert (desiredSize >= s->heap->size);
+  if (DEBUG_RESIZING or s->controls->messages) {
     fprintf (stderr,
              "[GC: Growing heap at "FMTPTR" of size %s bytes (+ %s bytes card/cross map),]\n",
-             (uintptr_t)s->heap.start,
-             uintmaxToCommaString(s->heap.size),
-             uintmaxToCommaString(s->heap.withMapsSize - s->heap.size));
+             (uintptr_t)s->heap->start,
+             uintmaxToCommaString(s->heap->size),
+             uintmaxToCommaString(s->heap->withMapsSize - s->heap->size));
     fprintf (stderr,
-             "[GC:\tto desired size of %s bytes (+ %s bytes card/cross map)]\n",
+             "[GC:\tto desired size of %s bytes and minimum size of %s bytes.]\n",
              uintmaxToCommaString(desiredSize),
-             uintmaxToCommaString(sizeofCardMapAndCrossMap (s, desiredSize)));
-    fprintf (stderr,
-             "[GC:\tand minimum size of %s bytes (+ %s bytes card/cross map).]\n",
-             uintmaxToCommaString(minSize),
-             uintmaxToCommaString(sizeofCardMapAndCrossMap (s, minSize)));
+             uintmaxToCommaString(minSize));
   }
-  if (minSize <= s->heap.size) {
+  if (minSize <= s->heap->size) {
     useCurrent = TRUE;
-    /* Demand proper growth from remapHeap and/or createHeap. */
-    minSize = s->heap.size + s->sysvals.pageSize;
+    /* Demand real growth from remapHeap and/or createHeap. */
+    minSize = (desiredSize / 2) + (s->heap->size / 2);
   } else {
     useCurrent = FALSE;
   }
-  curHeapp = &s->heap;
+  curHeapp = s->heap;
   newHeapp = &newHeap;
   origStart = curHeapp->start;
   liveSize = curHeapp->oldGenSize;
@@ -458,8 +391,7 @@ void growHeap (GC_state s, size_t desiredSize, size_t minSize) {
     shrinkHeap (s, curHeapp, liveSize);
   initHeap (s, newHeapp);
   /* Allocate a space of the desired size. */
-  if (minSize + sizeofCardMapAndCrossMap (s, minSize) <= SIZE_MAX - curHeapp->withMapsSize
-      and createHeap (s, newHeapp, desiredSize, minSize)) {
+  if (createHeap (s, newHeapp, desiredSize, minSize)) {
     pointer from;
     pointer to;
     size_t remaining;
@@ -486,52 +418,52 @@ copy:
     newHeapp->oldGenSize = liveSize;
     *curHeapp = *newHeapp;
   } else if (useCurrent) {
-    if (DEBUG_RESIZING or s->controls.messages) {
+    if (DEBUG_RESIZING or s->controls->messages) {
       fprintf (stderr,
                "[GC: Using heap at "FMTPTR" of size %s bytes (+ %s bytes card/cross map).]\n",
-               (uintptr_t)s->heap.start,
-               uintmaxToCommaString(s->heap.size),
-               uintmaxToCommaString(s->heap.withMapsSize - s->heap.size));
+               (uintptr_t)s->heap->start,
+               uintmaxToCommaString(s->heap->size),
+               uintmaxToCommaString(s->heap->withMapsSize - s->heap->size));
     }
-  } else if (s->controls.mayPageHeap) {
+  } else if (s->controls->mayPageHeap) {
     /* Page the heap to disk and try again. */
     void *data;
 
-    if (DEBUG or s->controls.messages) {
+    if (DEBUG or s->controls->messages) {
       fprintf (stderr,
-               "[GC: Writing heap at "FMTPTR" of size %s bytes to disk.]\n",
-               (uintptr_t)curHeapp->start,
-               uintmaxToCommaString(liveSize));
+               "[GC: Writing %s bytes of heap at "FMTPTR" to disk.]\n",
+               uintmaxToCommaString(liveSize),
+               (uintptr_t)curHeapp->start);
     }
     data = GC_diskBack_write (curHeapp->start, liveSize);
     releaseHeap (s, curHeapp);
     if (createHeap (s, curHeapp, desiredSize, minSize)) {
-      if (DEBUG or s->controls.messages) {
+      if (DEBUG or s->controls->messages) {
         fprintf (stderr,
-                 "[GC: Reading heap to "FMTPTR" of size %s bytes from disk.]\n",
-                 (uintptr_t)(curHeapp->start),
-                 uintmaxToCommaString(liveSize));
+                 "[GC: Reading %s bytes of heap to "FMTPTR" from disk.]\n",
+                 uintmaxToCommaString(liveSize),
+                 (uintptr_t)(curHeapp->start));
       }
       GC_diskBack_read (data, curHeapp->start, liveSize);
       GC_diskBack_close (data);
       curHeapp->oldGenSize = liveSize;
     } else {
       GC_diskBack_close (data);
-      goto oom;
+      if (s->controls->messages)
+        GC_displayMem ();
+      die ("Out of memory.  Unable to allocate heap with %s bytes.\n",
+           uintmaxToCommaString(minSize));
     }
   } else {
-    goto oom;
+    if (s->controls->messages)
+      GC_displayMem ();
+    die ("Out of memory.  Unable to allocate heap with %s bytes.\n",
+         uintmaxToCommaString(minSize));
   }
 done:
-  unless (origStart == s->heap.start) {
-    translateHeap (s, origStart, s->heap.start, s->heap.oldGenSize);
+  unless (origStart == s->heap->start) {
+    translateHeap (s, origStart, s->heap->start, s->heap->oldGenSize);
   }
-  return;
-oom:
-  if (s->controls.messages)
-    GC_displayMem ();
-  die ("Out of memory.  Unable to allocate heap with %s bytes.\n",
-       uintmaxToCommaString(minSize));
 }
 
 /* resizeHeap (s, minSize)
@@ -542,41 +474,38 @@ void resizeHeap (GC_state s, size_t minSize) {
   if (DEBUG_RESIZING)
     fprintf (stderr, "resizeHeap  minSize = %s  size = %s\n",
              uintmaxToCommaString(minSize),
-             uintmaxToCommaString(s->heap.size));
-  desiredSize = sizeofHeapDesired (s, minSize, s->heap.size);
-  assert (isAligned (desiredSize, s->sysvals.pageSize));
+             uintmaxToCommaString(s->heap->size));
+  desiredSize = sizeofHeapDesired (s, minSize, s->heap->size);
   assert (minSize <= desiredSize);
-  minSize = align (minSize, s->sysvals.pageSize);
-  if (desiredSize <= s->heap.size) {
-    shrinkHeap (s, &s->heap, desiredSize);
+  if (desiredSize <= s->heap->size) {
+    shrinkHeap (s, s->heap, desiredSize);
   } else {
-    releaseHeap (s, &s->secondaryHeap);
+    releaseHeap (s, s->secondaryHeap);
     growHeap (s, desiredSize, minSize);
   }
-  assert (s->heap.size >= minSize);
+  assert (s->heap->size >= minSize);
 }
 
 /* resizeHeapSecondary (s)
  */
 void resizeHeapSecondary (GC_state s) {
-  size_t primarySize, primaryWithMapsSize;
+  size_t primarySize;
   size_t secondarySize;
 
-  primarySize = s->heap.size;
-  primaryWithMapsSize = s->heap.withMapsSize;
-  secondarySize = s->secondaryHeap.size;
+  primarySize = s->heap->size;
+  secondarySize = s->secondaryHeap->size;
   if (DEBUG_RESIZING)
     fprintf (stderr, "secondaryHeapResize\n");
   if (0 == secondarySize)
     return;
-  if (2 * primaryWithMapsSize > s->sysvals.ram)
+  if (2 * primarySize > s->sysvals.ram)
     /* Holding on to secondaryHeap might cause paging.  So don't. */
-    releaseHeap (s, &s->secondaryHeap);
+    releaseHeap (s, s->secondaryHeap);
   else if (secondarySize < primarySize) {
-    unless (remapHeap (s, &s->secondaryHeap, primarySize, primarySize))
-      releaseHeap (s, &s->secondaryHeap);
+    unless (remapHeap (s, s->secondaryHeap, primarySize, primarySize))
+      releaseHeap (s, s->secondaryHeap);
   } else if (secondarySize > primarySize)
-    shrinkHeap (s, &s->secondaryHeap, primarySize);
-  assert (0 == s->secondaryHeap.size
-          or s->heap.size == s->secondaryHeap.size);
+    shrinkHeap (s, s->secondaryHeap, primarySize);
+  assert (0 == s->secondaryHeap->size
+          or s->heap->size == s->secondaryHeap->size);
 }

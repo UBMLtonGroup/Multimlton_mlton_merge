@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 2004-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2004-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -9,6 +8,8 @@
 functor ProfileLabel (S: PROFILE_LABEL_STRUCTS): PROFILE_LABEL =
    struct
       open S
+
+      type int = Int.t
 
       datatype t = T of {plist: PropertyList.t,
                          uniq: int}

@@ -1,5 +1,4 @@
-(* Copyright (C) 2013 Matthew Fluet.
- * Copyright (C) 2002-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2002-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -450,7 +449,7 @@ fun inputAll (ib as In {state, ...}) =
 val inputLine =
    case line of
       NONE => (fn ib => SOME (input ib))
-    | SOME {isLine, lineElem} =>
+    | SOME {isLine, lineElem, ...} =>
          let
             val lineVec = V.tabulate (1, fn _ => lineElem)
          in

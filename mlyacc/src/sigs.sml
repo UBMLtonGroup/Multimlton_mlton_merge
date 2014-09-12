@@ -1,13 +1,18 @@
-(* Modified by Vesa Karvonen on 2007-12-18.
- * Create line directives in output.
+(* Modified by mfluet@acm.org on 2005-8-01.
+ * Update with SML/NJ 110.55+.
  *)
+(* Modified by sweeks@acm.org on 2000-8-24.
+ * Ported to MLton.
+ *)
+type int = Int.int
+
 (* ML-Yacc Parser Generator (c) 1989, 1991 Andrew W. Appel, David R. Tarditi *)
 
 signature HEADER =
   sig
     type pos = {line : int, col : int}
     val pos : {line : int ref, start : int ref}
-    val text : string list ref
+    val text : string list ref 
 
     type inputSource
     val newSource : string * TextIO.instream * TextIO.outstream -> inputSource
@@ -33,12 +38,12 @@ signature HEADER =
                        NSHIFT of symbol list | POS of string | PURE |
                        PARSE_ARG of string * string |
                        TOKEN_SIG_INFO of string
-
+                           
     datatype rule = RULE of {lhs : symbol, rhs : symbol list,
                              code : {text : string, pos : pos},
                              prec : symbol option}
 
-    datatype declData = DECL of
+    datatype declData = DECL of 
                         {eop : symbol list,
                          keyword : symbol list,
                          nonterm : (symbol * ty option) list option,
@@ -67,7 +72,7 @@ signature PARSE_GEN =
 
 signature GRAMMAR =
     sig
-
+        
         datatype term = T of int
         datatype nonterm = NT of int
         datatype symbol = TERM of term | NONTERM of nonterm
@@ -90,7 +95,7 @@ signature GRAMMAR =
                         noshift : term list,
                         precedence : term -> int option,
                         termToString : term -> string,
-                        nontermToString : nonterm -> string}
+                        nontermToString : nonterm -> string} 
    end
 
 (* signature for internal version of grammar *)
@@ -110,7 +115,7 @@ signature INTGRAMMAR =
 
         (* internal number of rule - convenient for producing LR graph *)
 
-                 num : int,
+                 num : int,     
                  rulenum : int,
                  precedence : int option}
 
@@ -157,7 +162,7 @@ signature CORE =
         val insert : item * item list -> item list
         val union : item list * item list -> item list
 
-(* core:  a set of items.  It is represented by an ordered list of items.
+(* core:  a set of items.  It is represented by an ordered list of items. 
    The list is in ascending order The rule numbers and the positions of the
    dots are used to order the items. *)
 
@@ -245,7 +250,7 @@ signature LOOK =
                             {nullable: Grammar.nonterm -> bool,
                              first : Grammar.symbol list -> Grammar.term list}
 
-        val prLook : (Grammar.term -> string) * (string -> unit) ->
+        val prLook : (Grammar.term -> string) * (string -> unit) -> 
                         Grammar.term list -> unit
    end
 
@@ -292,7 +297,7 @@ signature LR_ERRS =
 
     datatype err = RR of LrTable.term * LrTable.state * int * int
                  | SR of LrTable.term * LrTable.state * int
-                 | NS of LrTable.term * int
+                 | NS of LrTable.term * int  
                  | NOT_REDUCED of int
                  | START of int
 
@@ -300,7 +305,7 @@ signature LR_ERRS =
                             not_reduced : int, start : int,nonshift : int}
 
      val printSummary : (string -> unit) -> err list -> unit
-
+                                      
   end
 
 (* PRINT_STRUCT: prints a structure which includes a value 'table' and a
@@ -308,7 +313,7 @@ signature LR_ERRS =
    structure will contain the same information as the one passed to
    printStruct, although the representation may be different.  It returns
    the number of entries left in the table after compaction.*)
-
+  
 signature PRINT_STRUCT =
   sig
         structure LrTable : LR_TABLE

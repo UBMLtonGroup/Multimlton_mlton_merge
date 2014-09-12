@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -62,7 +61,7 @@
  * Stack limit checks are completely orthogonal to heap checks, and are simply
  * inserted at the start of each function.
  *)
-functor LimitCheck (S: RSSA_TRANSFORM_STRUCTS): RSSA_TRANSFORM =
+functor LimitCheck (S: LIMIT_CHECK_STRUCTS): LIMIT_CHECK =
 struct
 
 open S
@@ -166,7 +165,7 @@ fun insertFunction (f: Function.t,
       local
          val r: Label.t option ref = ref NONE
       in
-         fun heapCheckTooLarge () =
+         fun allocTooLarge () =
             case !r of
                SOME l => l
              | NONE =>
@@ -185,7 +184,7 @@ fun insertFunction (f: Function.t,
                                      readsStackTop = false,
                                      return = Type.unit,
                                      symbolScope = CFunction.SymbolScope.Private,
-                                     target = CFunction.Target.Direct "MLton_heapCheckTooLarge",
+                                     target = CFunction.Target.Direct "MLton_allocTooLarge",
                                      writesStackTop = false}
                      val _ =
                         newBlocks :=
@@ -273,9 +272,11 @@ fun insertFunction (f: Function.t,
                                label = collect,
                                statements = Vector.new0 (),
                                transfer = (Transfer.CCall
-                                           {args = Vector.new3 (Operand.GCState,
+                                           {args = Vector.new5 (Operand.GCState,
                                                                 amount,
-                                                                force),
+                                                                force,
+                                                                Operand.File,
+                                                                Operand.Line),
                                             func = func,
                                             return = SOME collectReturn})}
                       :: (Block.T
@@ -312,12 +313,6 @@ fun insertFunction (f: Function.t,
                 in
                    label
                 end
-             fun gotoHeapCheckTooLarge () =
-                newBlock
-                (true,
-                 Vector.new0 (),
-                 Transfer.Goto {args = Vector.new0 (),
-                                dst = heapCheckTooLarge ()})
              fun primApp (prim, op1, op2, {collect, dontCollect}) =
                 let
                    val res = Var.newNoname ()
@@ -420,22 +415,10 @@ fun insertFunction (f: Function.t,
                                         Operand.Runtime Frontier,
                                         insert (Operand.word
                                                 (WordX.zero (WordSize.csize ()))))
-                 else
-                    let
-                       val bytes =
-                          let
-                             val bytes =
-                                WordX.fromIntInf
-                                (Bytes.toIntInf bytes,
-                                 WordSize.csize ())
-                          in
-                             SOME bytes
-                          end handle Overflow => NONE
-                    in
-                       case bytes of
-                          NONE => gotoHeapCheckTooLarge ()
-                        | SOME bytes => heapCheck (true, Operand.word bytes)
-                    end)
+                 else heapCheck (true,
+                                 Operand.word (WordX.fromIntInf
+                                               (Bytes.toIntInf bytes,
+                                                WordSize.csize ()))))
              fun smallAllocation (): unit =
                 let
                    val b = blockCheckAmount {blockIndex = i}
@@ -453,42 +436,38 @@ fun insertFunction (f: Function.t,
                          (case c of
                              Const.Word w =>
                                 heapCheckNonZero
-                                (Bytes.+
-                                 (Bytes.fromIntInf (WordX.toIntInf w),
-                                  extraBytes))
-                           | _ => Error.bug "LimitCheck.bigAllocation: strange constant bytesNeeded")
+                                (Bytes.fromWord
+                                 (Word.addCheck
+                                  (Word.fromIntInf (WordX.toIntInf w),
+                                   Bytes.toWord extraBytes))
+                                 handle Overflow => Runtime.allocTooLarge)
+                           | _ => Error.bug "LimitCheck.bigAllocation: strange primitive bytes needed")
                     | _ =>
                          let
                             val bytes = Var.newNoname ()
-                            val extraBytes =
-                               let
-                                  val extraBytes =
-                                     WordX.fromIntInf
-                                     (Bytes.toIntInf extraBytes,
-                                      WordSize.csize ())
-                               in
-                                  SOME extraBytes
-                               end handle Overflow => NONE
+                            val _ =
+                               newBlock
+                               (true,
+                                Vector.new0 (),
+                                Transfer.Arith
+                                {args = Vector.new2 (Operand.word
+                                                     (WordX.fromIntInf
+                                                      (Word.toIntInf
+                                                       (Bytes.toWord extraBytes),
+                                                       WordSize.csize ())),
+                                                     bytesNeeded),
+                                 dst = bytes,
+                                 overflow = allocTooLarge (),
+                                 prim = Prim.wordAddCheck (WordSize.csize (),
+                                                           {signed = false}),
+                                 success = (heapCheck
+                                            (false, 
+                                             Operand.Var
+                                             {var = bytes,
+                                              ty = Type.csize ()})),
+                                 ty = Type.csize ()})
                          in
-                            case extraBytes of
-                               NONE => ignore (gotoHeapCheckTooLarge ())
-                             | SOME extraBytes =>
-                                  (ignore o newBlock)
-                                  (true,
-                                   Vector.new0 (),
-                                   Transfer.Arith
-                                   {args = Vector.new2 (Operand.word extraBytes,
-                                                        bytesNeeded),
-                                    dst = bytes,
-                                    overflow = heapCheckTooLarge (),
-                                    prim = Prim.wordAddCheck (WordSize.csize (),
-                                                              {signed = false}),
-                                    success = (heapCheck
-                                               (false,
-                                                Operand.Var
-                                                {var = bytes,
-                                                 ty = Type.csize ()})),
-                                    ty = Type.csize ()})
+                            ()
                          end
                 end
           in
@@ -825,7 +804,7 @@ fun insertCoalesce (f: Function.t, handlesSignals) =
       f
    end
 
-fun transform (Program.T {functions, handlesSignals, main, objectTypes}) =
+fun insert (Program.T {functions, handlesSignals, main, objectTypes}) =
    let
       val _ = Control.diagnostic (fn () => Layout.str "Limit Check maxPaths")
       datatype z = datatype Control.limitCheck

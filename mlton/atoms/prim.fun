@@ -1,5 +1,4 @@
-(* Copyright (C) 2009-2010 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -11,10 +10,12 @@
  * If you add new polymorphic primitives, you must modify extractTargs.
  *)
 
-functor Prim (S: PRIM_STRUCTS): PRIM = 
+functor Prim (S: PRIM_STRUCTS): PRIM =
 struct
 
 open S
+
+type word = Word.t
 
 local
    open Const
@@ -59,8 +60,9 @@ datatype 'a t =
  | Exn_name (* implement exceptions *)
  | Exn_setExtendExtra (* implement exceptions *)
  | FFI of 'a CFunction.t (* ssa to rssa *)
- | FFI_Symbol of {name: string, 
-                  cty: CType.t option, 
+ | FFI_getOpArgsResPtr (* XXX DOC spoons *)
+ | FFI_Symbol of {name: string,
+                  cty: CType.t option,
                   symbolScope: CFunction.SymbolScope.t } (* codegen *)
  | GC_collect (* ssa to rssa *)
  | IntInf_add (* ssa to rssa *)
@@ -152,6 +154,8 @@ datatype 'a t =
   * on the stack.
   *)
  | Thread_switchTo (* ssa to rssa *)
+ | Threadlet_jumpDown (* ssa to rssa *)
+ | Threadlet_prefixAndSwitchTo (* ssa to rssa *)
  | TopLevel_getHandler (* implement exceptions *)
  | TopLevel_getSuffix (* implement suffix *)
  | TopLevel_setHandler (* implement exceptions *)
@@ -245,6 +249,7 @@ fun toString (n: 'a t): string =
        | Exn_name => "Exn_name"
        | Exn_setExtendExtra => "Exn_setExtendExtra"
        | FFI f => (CFunction.Target.toString o CFunction.target) f
+       | FFI_getOpArgsResPtr => "FFI_getOpArgsResPtr"
        | FFI_Symbol {name, ...} => name
        | GC_collect => "GC_collect"
        | IntInf_add => "IntInf_add"
@@ -317,6 +322,8 @@ fun toString (n: 'a t): string =
        | Thread_copyCurrent => "Thread_copyCurrent"
        | Thread_returnToC => "Thread_returnToC"
        | Thread_switchTo => "Thread_switchTo"
+       | Threadlet_jumpDown => "Threadlet_jumpDown"
+       | Threadlet_prefixAndSwitchTo => "Threadlet_prefixAndSwitchTo"
        | TopLevel_getHandler => "TopLevel_getHandler"
        | TopLevel_getSuffix => "TopLevel_getSuffix"
        | TopLevel_setHandler => "TopLevel_setHandler"
@@ -386,6 +393,7 @@ val equals: 'a t * 'a t -> bool =
     | (Exn_name, Exn_name) => true
     | (Exn_setExtendExtra, Exn_setExtendExtra) => true
     | (FFI f, FFI f') => CFunction.equals (f, f')
+    | (FFI_getOpArgsResPtr, FFI_getOpArgsResPtr) => true
     | (FFI_Symbol {name = n, ...}, FFI_Symbol {name = n', ...}) => n = n'
     | (GC_collect, GC_collect) => true
     | (IntInf_add, IntInf_add) => true
@@ -464,6 +472,8 @@ val equals: 'a t * 'a t -> bool =
     | (Thread_copyCurrent, Thread_copyCurrent) => true
     | (Thread_returnToC, Thread_returnToC) => true
     | (Thread_switchTo, Thread_switchTo) => true
+    | (Threadlet_jumpDown, Threadlet_jumpDown) => true
+    | (Threadlet_prefixAndSwitchTo, Threadlet_prefixAndSwitchTo) => true
     | (TopLevel_getHandler, TopLevel_getHandler) => true
     | (TopLevel_getSuffix, TopLevel_getSuffix) => true
     | (TopLevel_setHandler, TopLevel_setHandler) => true
@@ -549,7 +559,8 @@ val map: 'a t * ('a -> 'b) -> 'b t =
     | Exn_name => Exn_name
     | Exn_setExtendExtra => Exn_setExtendExtra
     | FFI func => FFI (CFunction.map (func, f))
-    | FFI_Symbol {name, cty, symbolScope} => 
+    | FFI_getOpArgsResPtr => FFI_getOpArgsResPtr
+    | FFI_Symbol {name, cty, symbolScope} =>
         FFI_Symbol {name = name, cty = cty, symbolScope = symbolScope}
     | GC_collect => GC_collect
     | IntInf_add => IntInf_add
@@ -622,6 +633,8 @@ val map: 'a t * ('a -> 'b) -> 'b t =
     | Thread_copyCurrent => Thread_copyCurrent
     | Thread_returnToC => Thread_returnToC
     | Thread_switchTo => Thread_switchTo
+    | Threadlet_jumpDown => Threadlet_jumpDown
+    | Threadlet_prefixAndSwitchTo => Threadlet_prefixAndSwitchTo
     | TopLevel_getHandler => TopLevel_getHandler
     | TopLevel_getSuffix => TopLevel_getSuffix
     | TopLevel_setHandler => TopLevel_setHandler
@@ -672,7 +685,7 @@ val bug = MLton_bug
 val cpointerAdd = CPointer_add
 val cpointerDiff = CPointer_diff
 val cpointerEqual = CPointer_equal
-fun cpointerGet ctype = 
+fun cpointerGet ctype =
    let datatype z = datatype CType.t
    in
       case ctype of
@@ -690,7 +703,7 @@ fun cpointerGet ctype =
        | Word64 => CPointer_getWord (WordSize.fromBits (Bits.fromInt 64))
    end
 val cpointerLt = CPointer_lt
-fun cpointerSet ctype = 
+fun cpointerSet ctype =
    let datatype z = datatype CType.t
    in
       case ctype of
@@ -799,6 +812,7 @@ val kind: 'a t -> Kind.t =
        | Exn_name => Functional
        | Exn_setExtendExtra => SideEffect
        | FFI _ => Kind.SideEffect
+       | FFI_getOpArgsResPtr => SideEffect (* PERF spoons perhaps conservative? *)
        | FFI_Symbol _ => Functional
        | GC_collect => SideEffect
        | IntInf_add => Functional
@@ -871,6 +885,8 @@ val kind: 'a t -> Kind.t =
        | Thread_copyCurrent => SideEffect
        | Thread_returnToC => SideEffect
        | Thread_switchTo => SideEffect
+       | Threadlet_jumpDown => SideEffect
+       | Threadlet_prefixAndSwitchTo => SideEffect
        | TopLevel_getHandler => DependsOnState
        | TopLevel_getSuffix => DependsOnState
        | TopLevel_setHandler => SideEffect
@@ -1000,6 +1016,7 @@ in
        Exn_extra,
        Exn_name,
        Exn_setExtendExtra,
+       FFI_getOpArgsResPtr,
        GC_collect,
        IntInf_add,
        IntInf_andb,
@@ -1043,6 +1060,8 @@ in
        Thread_copyCurrent,
        Thread_returnToC,
        Thread_switchTo,
+       Threadlet_jumpDown,
+       Threadlet_prefixAndSwitchTo,
        TopLevel_getHandler,
        TopLevel_getSuffix,
        TopLevel_setHandler,
@@ -1064,7 +1083,7 @@ in
            fun coerces (name, sizes, sizes', ac) =
               List.fold
               (sizes, ac, fn (s, ac) =>
-               List.fold 
+               List.fold
                (sizes', ac, fn (s', ac) =>
                 name (s, s') :: ac))
            fun coercesS (name, sizes, sizes', ac) =
@@ -1075,7 +1094,7 @@ in
            fun casts (name, sizes, ac) =
               List.fold (sizes, ac, fn (s, ac) => name s :: ac)
         in
-           casts (fn rs => Real_castToWord (rs, WordSize.fromBits (RealSize.bits rs)), real, 
+           casts (fn rs => Real_castToWord (rs, WordSize.fromBits (RealSize.bits rs)), real,
            coerces (Real_rndToReal, real, real,
            coercesS (Real_rndToWord, real, word,
            casts (fn rs => Word_castToReal (WordSize.fromBits (RealSize.bits rs), rs), real,
@@ -1223,9 +1242,9 @@ fun 'a checkApp (prim: 'a t,
        | Array_update =>
             oneTarg (fn t => (threeArgs (array t, seqIndex, t), unit))
        | CPointer_add =>
-            noTargs (fn () => (twoArgs (cpointer, cptrdiff), cpointer))
+            noTargs (fn () => (twoArgs (cpointer, csize), cpointer))
        | CPointer_diff =>
-            noTargs (fn () => (twoArgs (cpointer, cpointer), cptrdiff))
+            noTargs (fn () => (twoArgs (cpointer, cpointer), csize))
        | CPointer_equal =>
             noTargs (fn () => (twoArgs (cpointer, cpointer), bool))
        | CPointer_fromWord => noTargs (fn () => (oneArg (csize), cpointer))
@@ -1249,13 +1268,14 @@ fun 'a checkApp (prim: 'a t,
        | CPointer_setWord s =>
             noTargs (fn () => (threeArgs (cpointer, cptrdiff, word s), unit))
        | CPointer_sub =>
-            noTargs (fn () => (twoArgs (cpointer, cptrdiff), cpointer))
+            noTargs (fn () => (twoArgs (cpointer, csize), cpointer))
        | CPointer_toWord => noTargs (fn () => (oneArg cpointer, csize))
        | Exn_extra => oneTarg (fn t => (oneArg exn, t))
        | Exn_name => noTargs (fn () => (oneArg exn, string))
        | Exn_setExtendExtra => oneTarg (fn t => (oneArg (arrow (t, t)), unit))
        | FFI f =>
             noTargs (fn () => (nArgs (CFunction.args f), CFunction.return f))
+       | FFI_getOpArgsResPtr => noTargs (fn () => (noArgs, cpointer))
        | FFI_Symbol _ => noTargs (fn () => (noArgs, cpointer))
        | GC_collect => noTargs (fn () => (noArgs, unit))
        | IntInf_add => intInfBinary ()
@@ -1285,7 +1305,7 @@ fun 'a checkApp (prim: 'a t,
        | MLton_eq => oneTarg (fn t => (twoArgs (t, t), bool))
        | MLton_equal => oneTarg (fn t => (twoArgs (t, t), bool))
        | MLton_halt => noTargs (fn () => (oneArg cint, unit))
-       | MLton_hash => oneTarg (fn t => (oneArg t, word32))
+       | MLton_hash => oneTarg (fn t => (twoArgs (seqIndex, t), word32))
        | MLton_handlesSignals => noTargs (fn () => (noArgs, bool))
        | MLton_installSignalHandler => noTargs (fn () => (noArgs, unit))
        | MLton_serialize => oneTarg (fn t => (oneArg t, word8Vector))
@@ -1333,6 +1353,8 @@ fun 'a checkApp (prim: 'a t,
        | Thread_copyCurrent => noTargs (fn () => (noArgs, unit))
        | Thread_returnToC => noTargs (fn () => (noArgs, unit))
        | Thread_switchTo => noTargs (fn () => (oneArg thread, unit))
+       | Threadlet_jumpDown => noTargs (fn () => (oneArg cint, unit))
+       | Threadlet_prefixAndSwitchTo => noTargs (fn () => (oneArg thread, unit))
        | TopLevel_getHandler => noTargs (fn () => (noArgs, arrow (exn, unit)))
        | TopLevel_getSuffix => noTargs (fn () => (noArgs, arrow (unit, unit)))
        | TopLevel_setHandler =>
@@ -1418,7 +1440,7 @@ fun ('a, 'b) extractTargs (prim: 'b t,
        | MLton_deserialize => one result
        | MLton_eq => one (arg 0)
        | MLton_equal => one (arg 0)
-       | MLton_hash => one (arg 0)
+       | MLton_hash => one (arg 1)
        | MLton_serialize => one (arg 0)
        | MLton_share => one (arg 0)
        | MLton_size => one (arg 0)
@@ -1531,7 +1553,7 @@ fun ('a, 'b) apply (p: 'a t,
             orelse IntInf.> (ii, maxIntInf)
       end
       val intInfTooBig =
-         Trace.trace 
+         Trace.trace
          ("Prim.intInfTooBig", IntInf.layout, Bool.layout)
          intInfTooBig
       fun intInf (ii:  IntInf.t): ('a, 'b) ApplyResult.t =
@@ -1585,7 +1607,7 @@ fun ('a, 'b) apply (p: 'a t,
       fun intInfBinary (i1, i2) =
          if intInfTooBig i1 orelse intInfTooBig i2
             then ApplyResult.Unknown
-         else 
+         else
             case p of
                IntInf_add => iio (IntInf.+, i1, i2)
              | IntInf_andb => iio (IntInf.andb, i1, i2)
@@ -1600,7 +1622,7 @@ fun ('a, 'b) apply (p: 'a t,
       fun intInfUnary (i1) =
          if intInfTooBig i1
             then ApplyResult.Unknown
-         else 
+         else
             case p of
                IntInf_neg => intInf (IntInf.~ i1)
              | IntInf_notb => intInf (IntInf.notb i1)
@@ -1608,7 +1630,7 @@ fun ('a, 'b) apply (p: 'a t,
       fun intInfShiftOrToString (i1, w2) =
          if intInfTooBig i1
             then ApplyResult.Unknown
-         else 
+         else
             case p of
                IntInf_arshift =>
                   intInf (IntInf.~>> (i1, Word.fromIntInf (WordX.toIntInf w2)))
@@ -1626,7 +1648,7 @@ fun ('a, 'b) apply (p: 'a t,
                      val base =
                         case WordX.toInt w2 of
                            2 => StringCvt.BIN
-                         | 8 => StringCvt.OCT 
+                         | 8 => StringCvt.OCT
                          | 10 => StringCvt.DEC
                          | 16 => StringCvt.HEX
                          | _ => Error.bug "Prim.apply: strange base for IntInf_toString"
@@ -1836,7 +1858,7 @@ fun ('a, 'b) apply (p: 'a t,
                                then realAdd (s, x, x)
                             else Unknown
                           | Real_div s =>
-                            if inOrder andalso not signBit andalso exp = 0
+                            if not signBit andalso exp = 0
                                then realAdd (s, x, x)
                             else Unknown
                           | _ => Unknown)
@@ -1861,19 +1883,23 @@ fun ('a, 'b) apply (p: 'a t,
                                 then Var x
                              else Apply (neg s, [x])
                      else Unknown
-                  fun ro s =
+                  fun ro () =
                      if inOrder
                         then
-                           if WordX.isZero
-                              (WordX.rem
-                               (w,
-                                WordX.fromIntInf
-                                (IntInf.fromInt
-                                 (Bits.toInt (WordSize.bits s)),
-                                 WordX.size w),
-                                {signed = false}))
-                              then Var x
-                           else Unknown
+                           let
+                              val s = WordX.size w
+                           in
+                              if WordX.isZero
+                                 (WordX.rem
+                                  (w,
+                                   WordX.fromIntInf
+                                   (IntInf.fromInt
+                                    (Bits.toInt (WordSize.bits s)),
+                                    s),
+                                   {signed = false}))
+                                 then Var x
+                              else Unknown
+                           end
                      else
                         if WordX.isZero w orelse WordX.isAllOnes w
                            then word w
@@ -1895,7 +1921,7 @@ fun ('a, 'b) apply (p: 'a t,
                           else Unknown
                in
                   case p of
-                     CPointer_add => 
+                     CPointer_add =>
                         if WordX.isZero w
                            then Var x
                         else Unknown
@@ -1940,8 +1966,8 @@ fun ('a, 'b) apply (p: 'a t,
                                     orelse signed andalso WordX.isNegOne w)
                            then zero s
                         else Unknown
-                   | Word_rol s => ro s
-                   | Word_ror s => ro s
+                   | Word_rol _ => ro ()
+                   | Word_ror _ => ro ()
                    | Word_rshift (s, {signed}) =>
                         if signed
                            then
@@ -1980,9 +2006,9 @@ fun ('a, 'b) apply (p: 'a t,
              | (_, [Const (Real r), Var x]) => varReal (x, r, false)
              | (_, [Var x, Const (Word i)]) => varWord (x, i, true)
              | (_, [Const (Word i), Var x]) => varWord (x, i, false)
-             | (_, [Const (IntInf i1), Const (IntInf i2), _]) => 
+             | (_, [Const (IntInf i1), Const (IntInf i2), _]) =>
                   intInfBinary (i1, i2)
-             | (_, [Const (IntInf i1), Const (Word w2), _]) => 
+             | (_, [Const (IntInf i1), Const (Word w2), _]) =>
                   intInfShiftOrToString (i1, w2)
              | (_, [Const (IntInf i1), _]) => intInfUnary (i1)
              | (_, [Var x, Const (IntInf i), Var space]) =>
@@ -2021,7 +2047,7 @@ fun ('a, 'b) apply (p: 'a t,
                              datatype z = datatype ApplyResult.t
                           in
                              case p of
-                                CPointer_diff => word (WordX.zero (WordSize.cptrdiff ()))
+                                CPointer_diff => word (WordX.zero (WordSize.cpointer ()))
                               | CPointer_equal => t
                               | CPointer_lt => f
                               | IntInf_compare =>

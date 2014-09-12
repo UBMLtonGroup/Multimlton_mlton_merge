@@ -1,5 +1,4 @@
-(* Copyright (C) 2009-2010 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -11,6 +10,8 @@ functor ElaborateEnv (S: ELABORATE_ENV_STRUCTS): ELABORATE_ENV =
 struct
 
 open S
+
+type int = Int.t
 
 local
    open Control.Elaborate
@@ -1405,8 +1406,8 @@ fun collect (E,
 
 fun setTyconNames (E as T {currentScope, ...}): unit =
    let
-      val {get = shortest: Tycon.t -> int option ref, ...} =
-         Property.get (Tycon.plist, Property.initFun (fn _ => ref NONE))
+      val {get = shortest: Tycon.t -> int ref, ...} =
+         Property.get (Tycon.plist, Property.initFun (fn _ => ref Int.maxInt))
       fun doType (typeStr: TypeStr.t,
                   name: Ast.Tycon.t,
                   length: int,
@@ -1417,11 +1418,11 @@ fun setTyconNames (E as T {currentScope, ...}): unit =
                let
                   val r = shortest c
                in
-                  if isSome (!r) andalso length >= valOf (!r)
+                  if length >= !r
                      then ()
                   else
                      let
-                        val _ = r := SOME length
+                        val _ = r := length
                         val name =
                            Pretty.longid (List.map (strids, Strid.layout),
                                           Ast.Tycon.layout name)
@@ -1429,9 +1430,9 @@ fun setTyconNames (E as T {currentScope, ...}): unit =
                         Tycon.setPrintName (c, Layout.toString name)
                      end
                end
-      val {get = strShortest: Structure.t -> int option ref, ...} =
+      val {get = strShortest: Structure.t -> int ref, ...} =
          Property.get (Structure.plist,
-                       Property.initFun (fn _ => ref NONE))
+                       Property.initFun (fn _ => ref Int.maxInt))
       fun loopStr (s as Structure.T {strs, types, ...},
                    length: int,
                    strids: Strid.t list)
@@ -1439,10 +1440,10 @@ fun setTyconNames (E as T {currentScope, ...}): unit =
          let
             val r = strShortest s
          in
-            if isSome (!r) andalso length >= valOf (!r)
+            if length >= !r
                then ()
             else
-               (r := SOME length
+               (r := length
                 ; Info.foreach (types, fn (name, typeStr) =>
                                 doType (typeStr, name, length, strids))
                 ; Info.foreach (strs, fn (strid, str) =>
@@ -1465,7 +1466,7 @@ fun setTyconNames (E as T {currentScope, ...}): unit =
          else
             List.foreach
             (!allTycons, fn c =>
-             if isSome (! (shortest c))
+             if ! (shortest c) < Int.maxInt
                 then ()
              else
                 Tycon.setPrintName (c, concat ["?.", Tycon.originalName c]))
@@ -2039,7 +2040,7 @@ val extend:
                case uses of
                   New => newUses ()
                 | Old u => u
-                | Rebind => Error.bug "ElaborateEnv.extend.rebind.new: Rebind"
+                | Rebind => Error.bug "ElaborateEnv.extend.rebind.new"
          in
             {domain = domain,
              range = range,

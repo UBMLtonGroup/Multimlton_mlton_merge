@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,8 +6,10 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor RemoveUnused (S: SSA_TRANSFORM_STRUCTS): SSA_TRANSFORM =
+functor RemoveUnused (S: REMOVE_UNUSED_STRUCTS): REMOVE_UNUSED =
 struct
+
+type int = Int.t
 
 open S
 open Exp Transfer
@@ -281,7 +282,7 @@ structure LabelInfo =
    end
 
 
-fun transform (Program.T {datatypes, globals, functions, main}) =
+fun remove (Program.T {datatypes, globals, functions, main}) =
    let
       val {get = conInfo: Con.t -> ConInfo.t,
            set = setConInfo, ...} =
@@ -1038,7 +1039,7 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                      if FuncInfo.mayReturn fi'
                         then case cont of
                                 None =>
-                                   Error.bug "RemoveUnused.simplifyTransfer: cont:None"
+                                   Error.bug "RemoveUnused2.simplifyTransfer: cont:None"
                               | Caller =>
                                    (if (case (FuncInfo.returns fi,
                                               FuncInfo.returns fi') of
@@ -1046,7 +1047,7 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                                               Vector.forall2
                                               (xts, yts, fn ((x, _), (y, _)) =>
                                                VarInfo.isUsed x = VarInfo.isUsed y)
-                                         | _ => Error.bug "RemoveUnused.simplifyTransfer: cont:Caller")
+                                         | _ => Error.bug "RemoveUnused2.simplifyTransfer: cont:Caller")
                                        then Caller
                                     else Some (getReturnContFunc
                                                (fi, valOf (FuncInfo.returns fi'))))
@@ -1058,7 +1059,7 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                      if FuncInfo.mayRaise fi'
                         then (case handler of
                                  None =>
-                                    Error.bug "RemoveUnused.simplifyTransfer: handler:None"
+                                    Error.bug "RemoveUnused2.simplifyTransfer: handler:None"
                                | Caller =>
                                     (if (case (FuncInfo.raises fi,
                                                FuncInfo.raises fi') of
@@ -1066,7 +1067,7 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                                                Vector.forall2
                                                (xts, yts, fn ((x, _), (y, _)) =>
                                                 VarInfo.isUsed x = VarInfo.isUsed y)
-                                          | _ => Error.bug "RemoveUnused.simplifyTransfer: handler:Caller")
+                                          | _ => Error.bug "RemoveUnused2.simplifyTransfer: handler:Caller")
                                         then Caller
                                      else Some (getRaiseHandlerFunc
                                                 (fi, valOf (FuncInfo.raises fi'))))
@@ -1177,7 +1178,7 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                         return = getRuntimeWrapperLabel return}
       val simplifyTransfer =
          Trace.trace
-         ("RemoveUnused.simplifyTransfer",
+         ("RemoveUnused2.simplifyTransfer",
           Layout.tuple2 (Transfer.layout, FuncInfo.layout), Transfer.layout)
          simplifyTransfer
       fun simplifyBlock (Block.T {label, args, statements, transfer}): Block.t option =

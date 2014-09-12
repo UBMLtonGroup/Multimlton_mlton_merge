@@ -29,7 +29,7 @@ tmp="$$.sml"
 
 echo "val () = print \"I work\"" >"$tmp"
 if ! mlton "$tmp" 1>&2; then
-        die "Error: cannot upgrade basis because the compiler doesn't work"
+        die "Error: cannot upgrade basis because the compiler doesn't work" 
 fi
 
 feature () {
@@ -67,7 +67,7 @@ structure OS =
    end'
 
 feature 'val _ = IntInf.~>>' '
-structure IntInf =
+structure IntInf = 
    struct
       open IntInf
 
@@ -95,46 +95,147 @@ structure Word =
 structure Word32 = Word
 structure LargeWord = Word'
 
-feature 'val _ = PackWord64Big.bytesPerElem' '
-structure PackWord64Big : PACK_WORD = struct
-   val bytesPerElem = 0
-   val isBigEndian = true
-   fun subVec _ = raise Fail "PackWord64Big.subVec"
-   fun subVecX _ = raise Fail "PackWord64Big.subVecX"
-   fun subArr _ = raise Fail "PackWord64Big.subArr"
-   fun subArrX _ = raise Fail "PackWord64Big.subArrX"
-   fun update _ = raise Fail "PackWord64Big.update"
-end'
+eval `"$bin/platform"`
+case "$ARCH" in
+alpha)
+        arch='Alpha'
+;;
+amd64)
+        arch='AMD64'
+;;
+arm)
+        arch='ARM'
+;;
+hppa)
+        arch='HPPA'
+;;
+ia64)
+        arch='IA64'
+;;
+m68k)
+        arch='m68k'
+;;
+mips)
+        arch='MIPS'
+;;
+powerpc)
+        arch='PowerPC'
+;;
+s390)
+        arch='S390'
+;;
+sparc)
+        arch='Sparc'
+;;
+x86)
+        arch='X86'
+;;
+*)
+        die "strange HOST_ARCH: $HOST_ARCH"
+esac
 
-feature 'val _ = PackWord64Little.bytesPerElem' '
-structure PackWord64Little : PACK_WORD = struct
-   val bytesPerElem = 0
-   val isBigEndian = false
-   fun subVec _ = raise Fail "PackWord64Little.subVec"
-   fun subVecX _ = raise Fail "PackWord64Little.subVecX"
-   fun subArr _ = raise Fail "PackWord64Little.subArr"
-   fun subArrX _ = raise Fail "PackWord64Little.subArrX"
-   fun update _ = raise Fail "PackWord64Little.update"
-end'
+case "$OS" in
+aix)
+        os='AIX'
+;;
+cygwin)
+        os='Cygwin'
+;;
+darwin)
+        os='Darwin'
+;;
+freebsd)
+        os='FreeBSD'
+;;
+hpux)
+	os="HPUX"
+;;
+linux)
+        os='Linux'
+;;
+mingw)
+        os='MinGW'
+;;
+netbsd)
+        os='NetBSD'
+;;
+openbsd)
+        os='OpenBSD'
+;;
+solaris)
+        os='Solaris'
+;;
+*)
+        die "strange HOST_OS: $HOST_OS"
+;;
+esac
 
 cat <<-EOF
-structure MLton =
+structure MLton = 
    struct
       open MLton
 
       structure Platform =
          struct
+            fun peek (l, f) = List.find f l
+            fun omap (opt, f) = Option.map f opt
+            val toLower = String.translate (str o Char.toLower)
+
             structure Arch =
                struct
-                  type t = string
-                  val host = "$ARCH"
-                  val toString = fn s => s
+                  datatype t = Alpha | AMD64 | ARM | HPPA | IA64 | m68k |
+                               MIPS | PowerPC | S390 | Sparc | X86
+
+                  val all = [(Alpha, "Alpha"),
+                             (AMD64, "AMD64"),
+                             (ARM, "ARM"),
+                             (HPPA, "HPPA"),
+                             (IA64, "IA64"),
+                             (m68k, "m68k"),
+                             (MIPS, "MIPS"),
+                             (PowerPC, "PowerPC"), 
+                             (S390, "S390"),
+                             (Sparc, "Sparc"), 
+                             (X86, "X86")]
+
+                  fun fromString s =
+                     let
+                        val s = toLower s
+                     in
+                        omap (peek (all, fn (_, s') => s = toLower s'), #1)
+                     end
+
+                  val host = $arch
+
+                  fun toString a = #2 (valOf (peek (all, fn (a', _) => a = a')))
                end
+
             structure OS =
                struct
-                  type t = string
-                  val host = "$OS"
-                  val toString = fn s => s
+                  datatype t = AIX | Cygwin | Darwin | FreeBSD | HPUX | Linux
+                             | MinGW | NetBSD | OpenBSD | Solaris
+
+                  val all = [(AIX, "AIX"),
+                             (Cygwin, "Cygwin"),
+                             (Darwin, "Darwin"),
+                             (FreeBSD, "FreeBSD"),
+                             (HPUX, "HPUX"),
+                             (Linux, "Linux"),
+                             (MinGW, "MinGW"),
+                             (NetBSD, "NetBSD"),
+                             (OpenBSD, "OpenBSD"),
+                             (Solaris, "Solaris")]
+
+                  fun fromString s =
+                     let
+                        val s = toLower s
+                     in
+                        omap (peek (all, fn (_, s') => s = toLower s'), #1)
+                     end
+
+                  val host = $os
+
+                  fun toString a = #2 (valOf (peek (all, fn (a', _) => a = a')))
                end
          end
    end

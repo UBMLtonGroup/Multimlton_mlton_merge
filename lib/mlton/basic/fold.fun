@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2006, 2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006, 2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -8,6 +7,9 @@
 
 functor Fold (S: FOLD_STRUCTS): FOLD = 
 struct
+
+structure Int = Pervasive.Int
+type int = Int.int
 
 open S
 

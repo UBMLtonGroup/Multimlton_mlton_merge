@@ -35,7 +35,7 @@ structure Calls =
     and value = Zero | One | Many
     fun new (): t = T (ref Zero)
     fun inc (T r)
-      = case !r 
+      = case !r
           of Zero => r := One
            | _ => r := Many
     val isMany
@@ -133,15 +133,17 @@ structure VarInfo =
 
 fun multi (p as Program.T {functions, main, ...})
   = let
-      val usesThreadsOrConts 
+      val usesThreadsOrConts
         = Program.hasPrim (p, fn p =>
                            case Prim.name p of
                               Prim.Name.Thread_switchTo => true
+                            | Prim.Name.Threadlet_jumpDown => true
+                            | Prim.Name.Threadlet_prefixAndSwitchTo => true
                             | _ => false)
 
       (* funcNode *)
       val {get = funcNode: Func.t -> unit Node.t,
-           set = setFuncNode, 
+           set = setFuncNode,
            rem = remFuncNode, ...}
         = Property.getSetOnce
           (Func.plist, Property.initRaise ("Multi.funcNode", Func.layout))
@@ -149,7 +151,7 @@ fun multi (p as Program.T {functions, main, ...})
       (* nodeFunction *)
       val {get = nodeFunction: unit Node.t -> Function.t,
            set = setNodeFunction, ...}
-        = Property.getSetOnce 
+        = Property.getSetOnce
           (Node.plist, Property.initRaise ("Multi.nodeFunc", Node.layout))
 
       (* funcInfo *)
@@ -178,7 +180,7 @@ fun multi (p as Program.T {functions, main, ...})
               (functions, fn f =>
                let
                  val n = newNode ()
-               in 
+               in
                  setFuncNode (Function.name f, n) ;
                  setNodeFunction (n, f)
                end)
@@ -198,7 +200,7 @@ fun multi (p as Program.T {functions, main, ...})
                       of Call {func = g, ...}
                        => let
                             val gi = funcInfo g
-                          in 
+                          in
                             Calls.inc (FuncInfo.calls gi) ;
                             addEdge {from = funcNode f,
                                      to = funcNode g} ;
@@ -217,6 +219,8 @@ fun multi (p as Program.T {functions, main, ...})
                             andalso
                             (case Prim.name prim of
                                 Prim.Name.Thread_copyCurrent => true
+                              | Prim.Name.Threadlet_jumpDown => true
+                              | Prim.Name.Threadlet_prefixAndSwitchTo => true
                               | _ => false)
                            then (ThreadCopyCurrent.force
                                  (LabelInfo.threadCopyCurrent li) ;
@@ -267,7 +271,7 @@ fun multi (p as Program.T {functions, main, ...})
               else (MultiThreaded.force (LabelInfo.multiThreaded li) ;
                     MultiUsed.force (LabelInfo.multiUsed li) ;
                     Vector.foreach (args, forceMultiThreadedVar o #1) ;
-                    Vector.foreach 
+                    Vector.foreach
                     (statements, fn Statement.T {var, ...} =>
                      Option.app (var, forceMultiThreadedVar)) ;
                     Transfer.foreachFunc
@@ -284,7 +288,7 @@ fun multi (p as Program.T {functions, main, ...})
               else (forceMultiThreadedBlock block ;
                     Transfer.foreachLabel
                     (transfer, fn l =>
-                     forceMultiThreadedBlockDFS controlFlow 
+                     forceMultiThreadedBlockDFS controlFlow
                      (nodeBlock (labelNode l))))
           end
       val rec forceMultiUsedBlock
@@ -296,7 +300,7 @@ fun multi (p as Program.T {functions, main, ...})
               then ()
               else (MultiUsed.force (LabelInfo.multiUsed li) ;
                     Vector.foreach (args, forceMultiUsedVar o #1) ;
-                    Vector.foreach 
+                    Vector.foreach
                     (statements, fn Statement.T {var, ...} =>
                      Option.app (var, forceMultiUsedVar)) ;
                     Transfer.foreachFunc
@@ -308,7 +312,7 @@ fun multi (p as Program.T {functions, main, ...})
           if ThreadCopyCurrent.does (LabelInfo.threadCopyCurrent (labelInfo label))
             then Transfer.foreachLabel
                  (transfer, fn l =>
-                  forceMultiThreadedBlockDFS controlFlow 
+                  forceMultiThreadedBlockDFS controlFlow
                   (nodeBlock (labelNode l)))
             else ()
       val rec visitForceMultiUsedBlock
@@ -365,7 +369,7 @@ fun multi (p as Program.T {functions, main, ...})
                            end
                       else ())
               else if usesThreadsOrConts
-                     then let   
+                     then let
                             val _ = MultiThreaded.when
                                     (FuncInfo.multiThreaded fi,
                                      fn () => forceMultiThreadedFunc f)
@@ -388,7 +392,7 @@ fun multi (p as Program.T {functions, main, ...})
                                        visitForceMultiUsedBlock controlFlow
                                        (nodeBlock n)))
                           end
-                     else let   
+                     else let
                             val _ = MultiUsed.when
                                     (FuncInfo.multiUsed fi,
                                      fn () => forceMultiUsedFunc f)
@@ -400,7 +404,7 @@ fun multi (p as Program.T {functions, main, ...})
                               | [n] => if Node.hasEdge {from = n, to = n}
                                          then forceMultiUsedBlock (nodeBlock n)
                                          else ()
-                              | ns => List.foreach 
+                              | ns => List.foreach
                                       (ns, fn n =>
                                        forceMultiUsedBlock (nodeBlock n)))
                           end
@@ -411,7 +415,7 @@ fun multi (p as Program.T {functions, main, ...})
                fn [] => ()
                 | [n] =>
                      visitFunc (Node.hasEdge {from = n, to = n}) (nodeFunction n)
-                | ns => List.foreach 
+                | ns => List.foreach
                         (ns, fn n =>
                          visitFunc true (nodeFunction n)))
 
@@ -419,15 +423,15 @@ fun multi (p as Program.T {functions, main, ...})
       val _ = Control.diagnostics
               (fn display =>
                let open Layout
-               in 
+               in
                  display (Layout.str "\n\nMulti:") ;
                  display (seq [Layout.str "usesThreadsOrConts: ",
                                Bool.layout usesThreadsOrConts]) ;
                  List.foreach
                  (functions, fn f =>
-                  let 
+                  let
                     val {name = f, blocks, ...} = Function.dest f
-                  in 
+                  in
                     display (seq [Func.layout f,
                                   str ": ",
                                   FuncInfo.layout (funcInfo f)]) ;
@@ -443,18 +447,18 @@ fun multi (p as Program.T {functions, main, ...})
       {
        usesThreadsOrConts = usesThreadsOrConts,
 
-       funcDoesThreadCopyCurrent 
+       funcDoesThreadCopyCurrent
        = ThreadCopyCurrent.does o FuncInfo.threadCopyCurrent o funcInfo,
-       funcIsMultiThreaded 
+       funcIsMultiThreaded
        = MultiThreaded.is o FuncInfo.multiThreaded o funcInfo,
-       funcIsMultiUsed 
+       funcIsMultiUsed
        = MultiUsed.is o FuncInfo.multiUsed o funcInfo,
 
-       labelDoesThreadCopyCurrent 
+       labelDoesThreadCopyCurrent
        = ThreadCopyCurrent.does o LabelInfo.threadCopyCurrent o labelInfo,
-       labelIsMultiThreaded 
+       labelIsMultiThreaded
        = MultiThreaded.is o LabelInfo.multiThreaded o labelInfo,
-       labelIsMultiUsed 
+       labelIsMultiUsed
        = MultiUsed.is o LabelInfo.multiUsed o labelInfo,
 
        varIsMultiDefed

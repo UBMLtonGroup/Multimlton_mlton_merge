@@ -9,6 +9,7 @@ structure MLtonThread:> MLTON_THREAD_EXTRA =
 struct
 
 structure Prim = Primitive.MLton.Thread
+structure PrimWorld = Primitive.MLton.World
 
 fun die (s: string): 'a =
    (PrimitiveFFI.Stdio.print s
@@ -27,6 +28,7 @@ structure AtomicState =
 local
    open Prim
 in
+
    val atomicBegin = atomicBegin
    val atomicEnd = atomicEnd
    val atomicState = fn () =>
@@ -70,19 +72,25 @@ fun prepare (t: 'a t, v: 'a): Runnable.t =
 fun new f = T (ref (New f))
 
 local
+   val numProcessors = PacmlFFI.numberOfProcessors
+   val procNum = PacmlFFI.processorNumber
    local
-      val func: (unit -> unit) option ref = ref NONE
+      (* create one reference per processor *)
+      val func: (unit -> unit) option Array.array =
+          Array.tabulate (numProcessors, fn _ => NONE)
       val base: Prim.preThread =
          let
             val () = Prim.copyCurrent ()
+            (* Call to procNum *must* come after copy *)
+            val proc = procNum ()
          in
-            case !func of
+            case Array.unsafeSub (func, proc) of
                NONE => Prim.savedPre gcState
              | SOME x =>
                   (* This branch never returns. *)
                   let
                      (* Atomic 1 *)
-                     val () = func := NONE
+                     val () = Array.update (func, proc, NONE)
                      val () = atomicEnd ()
                      (* Atomic 0 *)
                   in
@@ -94,16 +102,19 @@ local
       fun newThread (f: unit -> unit) : Prim.thread =
          let
             (* Atomic 2 *)
-            val () = func := SOME f
+            val () = Array.update (func, procNum (), SOME f)
          in
             Prim.copy base
          end
    end
-   val switching = ref false
+   val switching = Array.tabulate (numProcessors, fn _ => false)
 in
+   fun amSwitching p =
+     Array.unsafeSub (switching, p)
    fun 'a atomicSwitch (f: 'a t -> Runnable.t): 'a =
+      let val proc = procNum () in
       (* Atomic 1 *)
-      if !switching
+      if Array.unsafeSub (switching, proc)
          then let
                  val () = atomicEnd ()
                  (* Atomic 0 *)
@@ -112,15 +123,15 @@ in
               end
       else
          let
-            val _ = switching := true
-            val r : (unit -> 'a) ref = 
+            val _ = Array.update (switching, proc, true)
+            val r : (unit -> 'a) ref =
                ref (fn () => die "Thread.atomicSwitch didn't set r.\n")
             val t: 'a thread ref =
                ref (Paused (fn x => r := x, Prim.current gcState))
             fun fail e = (t := Dead
-                          ; switching := false
+                          ; Array.update (switching, proc, false)
                           ; atomicEnd ()
-                          ; raise e)    
+                          ; raise e)
             val (T t': Runnable.t) = f (T t) handle e => fail e
             val primThread =
                case !t' before t' := Dead of
@@ -128,17 +139,24 @@ in
                 | Interrupted t => t
                 | New g => (atomicBegin (); newThread g)
                 | Paused (f, t) => (f (fn () => ()); t)
-            val _ = switching := false
+
+           val _ = if not (Array.unsafeSub (switching, proc))
+                    then raise Fail "switching switched?"
+                    else ()
+
+            val _ = Array.update (switching, proc, false)
             (* Atomic 1 when Paused/Interrupted, Atomic 2 when New *)
             val _ = Prim.switchTo primThread (* implicit atomicEnd() *)
             (* Atomic 0 when resuming *)
          in
             !r ()
          end
+      end
 
    fun switch f =
       (atomicBegin ()
        ; atomicSwitch f)
+
 end
 
 fun fromPrimitive (t: Prim.thread): Runnable.t =
@@ -147,7 +165,7 @@ fun fromPrimitive (t: Prim.thread): Runnable.t =
 fun toPrimitive (t as T r : unit t): Prim.thread =
    case !r of
       Dead => die "Thread.toPrimitive saw Dead.\n"
-    | Interrupted t => 
+    | Interrupted t =>
          (r := Dead
           ; t)
     | New _ =>
@@ -161,16 +179,21 @@ fun toPrimitive (t as T r : unit t): Prim.thread =
            ()))
     | Paused (f, t) =>
          (r := Dead
-          ; f (fn () => ()) 
+          ; f (fn () => ())
           ; t)
 
 
 local
-   val signalHandler: Prim.thread option ref = ref NONE
    datatype state = Normal | InHandler
-   val state: state ref = ref Normal
+
+   val numProcessors = PacmlFFI.numberOfProcessors
+   val procNum = PacmlFFI.processorNumber
+
+   val threadStates = Array.tabulate(numProcessors, fn _ => Normal )
+   val handlers = Array.tabulate(numProcessors, fn _ => NONE )
+
 in
-   fun amInSignalHandler () = InHandler = !state
+   fun amInSignalHandler () = InHandler = (Array.unsafeSub (threadStates, procNum ()))
 
    fun setSignalHandler (f: Runnable.t -> Runnable.t): unit =
       let
@@ -178,9 +201,9 @@ in
          fun loop (): unit =
             let
                (* Atomic 1 *)
-               val _ = state := InHandler
+               val _ = Array.update (threadStates, procNum (), InHandler)
                val t = f (fromPrimitive (Prim.saved gcState))
-               val _ = state := Normal
+               val _ = Array.update (threadStates, procNum (), Normal)
                val _ = Prim.finishSignalHandler gcState
                val _ =
                   atomicSwitch
@@ -199,7 +222,8 @@ in
          val p =
             toPrimitive
             (new (fn () => loop () handle e => MLtonExn.topLevelHandler e))
-         val _ = signalHandler := SOME p
+         val proc = procNum ()
+         val _ = Array.tabulate(numProcessors, fn i => Array.update(handlers, i, (SOME p)))
       in
          Prim.setSignalHandler (gcState, p)
       end
@@ -211,8 +235,9 @@ in
          (* Atomic 1 *)
          val () = Prim.startSignalHandler gcState (* implicit atomicBegin () *)
          (* Atomic 2 *)
+        val signalHandler = Array.unsafeSub(handlers, procNum ())
       in
-         case !signalHandler of
+         case signalHandler of
             NONE => raise Fail "no signal handler installed"
           | SOME t => Prim.switchTo t (* implicit atomicEnd() *)
       end
@@ -220,12 +245,11 @@ end
 
 
 local
-
 in
    val register: int * (MLtonPointer.t -> unit) -> unit =
       let
-         val exports = 
-            Array.array (Int32.toInt (Primitive.MLton.FFI.numExports), 
+         val exports =
+            Array.array (Int32.toInt (Primitive.MLton.FFI.numExports),
                          fn _ => raise Fail "undefined export")
          fun loop (): unit =
             let
@@ -240,9 +264,12 @@ in
                      val i = MLtonPointer.getInt32 (MLtonPointer.getPointer (p, 0), 0)
                      val _ =
                         (Array.sub (exports, Int32.toInt i) p)
-                        handle e => 
-                           (TextIO.output 
-                            (TextIO.stdErr, "Call from C to SML raised exception.\n")
+                        handle e =>
+                           (TextIO.output
+                            (TextIO.stdErr,
+                            "Call from C to SML raised exception. "
+                            ^Int.toString (i)
+                            ^"\n")
                             ; MLtonExn.topLevelHandler e)
                      (* Atomic 0 *)
                      val _ = atomicBegin ()

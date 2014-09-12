@@ -1,5 +1,4 @@
-/* Copyright (C) 2009,2012 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -16,8 +15,10 @@
 typedef uint8_t GC_cardMapElem;
 typedef uint8_t GC_crossMapElem;
 
-typedef GC_cardMapElem *GC_cardMap;
-typedef GC_crossMapElem *GC_crossMap;
+typedef GC_cardMapElem GC_cardMapStart __attribute__ ((aligned (4)));
+typedef GC_crossMapElem GC_crossMapStart __attribute__ ((aligned (4)));
+typedef GC_cardMapStart *GC_cardMap;
+typedef GC_crossMapStart *GC_crossMap;
 
 typedef size_t GC_cardMapIndex;
 typedef size_t GC_crossMapIndex;
@@ -25,6 +26,7 @@ typedef size_t GC_crossMapIndex;
 #define CROSS_MAP_ELEM_SIZE sizeof(GC_crossMapElem)
 #define CROSS_MAP_EMPTY ((GC_crossMapElem)255)
 #define CROSS_MAP_OFFSET_SCALE 4
+#define FMTCMI "%zu"
 #define FMTCME "%"PRIu8
 
 struct GC_generationalMaps {
@@ -67,24 +69,19 @@ static inline GC_cardMapElem *pointerToCardMapAddr (GC_state s, pointer p);
 
 static inline GC_crossMapIndex sizeToCrossMapIndex (size_t z);
 
-#if ASSERT
 static inline bool isCardMarked (GC_state s, pointer p);
-#endif
 static inline void markCard (GC_state s, pointer p);
 static inline void markIntergenerationalPointer (GC_state s, pointer *pp);
 static inline void markIntergenerationalObjptr (GC_state s, objptr *opp);
 
 static inline void setCardMapAbsolute (GC_state s);
-#if ASSERT
 static inline pointer getCrossMapCardStart (GC_state s, pointer p);
-#endif
 
 static inline size_t sizeofCardMap (GC_state s, size_t heapSize);
 static inline GC_cardMapIndex lenofCardMap (GC_state s, size_t cardMapSize);
 static inline size_t sizeofCrossMap (GC_state s, size_t heapSize);
 static inline GC_crossMapIndex lenofCrossMap (GC_state s, size_t crossMapSize);
 static size_t sizeofCardMapAndCrossMap (GC_state s, size_t heapSize);
-static size_t invertSizeofCardMapAndCrossMap (GC_state s, size_t heapWithMapsSize);
 
 static inline void clearCardMap (GC_state s);
 static inline void clearCrossMap (GC_state s);

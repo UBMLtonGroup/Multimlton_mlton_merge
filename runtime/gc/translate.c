@@ -1,5 +1,4 @@
-/* Copyright (C) 2010 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -11,16 +10,19 @@
 /*                          translateHeap                           */
 /* ---------------------------------------------------------------- */
 
-void translateObjptr (GC_state s, 
+struct translateState {
+  pointer from;
+  pointer to;
+};
+static struct translateState translateState;
+
+void translateObjptr (__attribute__ ((unused)) GC_state s,
                       objptr *opp) {
   pointer p;
-  pointer from, to;
 
-  from = s->translateState.from;
-  to = s->translateState.to;
-  p = objptrToPointer (*opp, from);
-  p = (p - from) + to;
-  *opp = pointerToObjptr (p, to);
+  p = objptrToPointer (*opp, translateState.from);
+  p = (p - translateState.from) + translateState.to;
+  *opp = pointerToObjptr (p, translateState.to);
 }
 
 /* translateHeap (s, from, to, size)
@@ -31,14 +33,14 @@ void translateHeap (GC_state s, pointer from, pointer to, size_t size) {
   if (from == to)
     return;
 
-  if (DEBUG or s->controls.messages)
-    fprintf (stderr, 
-             "[GC: Translating old-gen of size %s bytes of heap at "FMTPTR" from "FMTPTR".]\n",
-             uintmaxToCommaString(size),
+  if (DEBUG or s->controls->messages)
+    fprintf (stderr,
+             "[GC: Translating heap at "FMTPTR" of size %s bytes from "FMTPTR".]\n",
              (uintptr_t)to,
+             uintmaxToCommaString(size),
              (uintptr_t)from);
-  s->translateState.from = from;
-  s->translateState.to = to;
+  translateState.from = from;
+  translateState.to = to;
   /* Translate globals and heap. */
   foreachGlobalObjptr (s, translateObjptr);
   limit = to + size;

@@ -17,7 +17,7 @@
  * the root directory of the SML/NJ installation.  You may need to be root in
  * order to do these.
  * 1. From the SML/NJ REPL:
- *      CM.make "cm2mlb.cm";
+ *      CM.make "sources.cm";
  *      CM2MLB.export ();
  * 2. ln -s <smlnj>/bin/.run-sml <smlnj>/bin/cm2mlb
  * 3. mv cm2mlb.x86-linux <smlnj>/bin/.heap
@@ -83,7 +83,6 @@ struct
                      List.mapPartial
                      (fn line =>
                       if CharVector.all Char.isSpace line
-                         orelse CharVector.sub (line, 0) = #"#"
                          then NONE
                          else 
                             case String.tokens Char.isSpace line of
@@ -190,7 +189,7 @@ struct
                                else concat ["(* ", cmLibOSString, " ===> *) ", mlbLibDef ()]
                       in
                          concat 
-                         ["  basis ", bid, " =\n",
+                         ["  basis ", bid, " = \n",
                           "    bas\n",
                           "      ", mlbLib, "\n",
                           "    end\n"]
@@ -207,7 +206,7 @@ struct
                               outstream = out};
                   TextIO.output (out, "end\n")
                end
-          | NONE => die ("CM.Graph.graph " ^ sources ^ " failed") 
+          | NONE => ()
       end
 
    fun usage msg =
@@ -239,7 +238,7 @@ struct
              | _ => usage "wrong number of arguments"
       in
          loop args handle e => die (concat ["cm2mlb failed: ", General.exnMessage e])
-         ; OS.Process.success
+         ; 0
       end
 
    fun export () =

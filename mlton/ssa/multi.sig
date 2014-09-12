@@ -6,26 +6,26 @@
  * See the file MLton-LICENSE for details.
  *)
 
-signature MULTI_STRUCTS = 
+signature MULTI_STRUCTS =
    sig
       include SSA_TREE
    end
 
-signature MULTI = 
+signature MULTI =
    sig
       include MULTI_STRUCTS
 
-      val multi: Program.t -> 
+      val multi: Program.t ->
                  {(* Program has an occurence of Thread_switchTo. *)
                   usesThreadsOrConts: bool,
                   (* usesThreadsOrConts == true
                    * and the func directly or indirectly invokes
-                   * Thread_copyCurrent. 
+                   * Thread_copyCurrent.
                    *)
                   funcDoesThreadCopyCurrent: Func.t -> bool,
                   (* usesThreadsOrConts == true
                    * and the func may be called by two
-                   * different threads during some run of the 
+                   * different threads during some run of the
                    * program.
                    *)
                   funcIsMultiThreaded: Func.t -> bool,
@@ -53,7 +53,7 @@ signature MULTI =
                   labelIsMultiUsed: Label.t -> bool,
                   (* The var may be defined more than once
                    * during some run of the program;
-                   * i.e., varIsMultiDefed(x) = 
+                   * i.e., varIsMultiDefed(x) =
                    * labelIsMultiUsed(label of x's def)
                    * when x is defined in a block;
                    *)

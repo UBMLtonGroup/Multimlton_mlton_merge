@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,7 +6,7 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor SignalCheck (S: RSSA_TRANSFORM_STRUCTS): RSSA_TRANSFORM = 
+functor SignalCheck (S: SIGNAL_CHECK_STRUCTS): SIGNAL_CHECK = 
 struct
 
 open S
@@ -105,9 +104,11 @@ fun insertInFunction (f: Function.t): Function.t =
                     statements = Vector.new0 (),
                     transfer =
                     Transfer.CCall
-                    {args = Vector.new3 (Operand.GCState,
+                    {args = Vector.new5 (Operand.GCState,
                                          Operand.word (WordX.zero (WordSize.csize ())),
-                                         Operand.bool false),
+                                         Operand.bool false,
+                                         Operand.File,
+                                         Operand.Line),
                      func = func,
                      return = SOME collectReturn}})
                :: (Block.T
@@ -180,7 +181,7 @@ fun insertInFunction (f: Function.t): Function.t =
       f
    end
 
-fun transform p =
+fun insert p =
    let
       val Program.T {functions, handlesSignals, main, objectTypes} = p
    in

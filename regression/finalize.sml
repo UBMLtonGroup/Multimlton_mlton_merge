@@ -4,7 +4,7 @@ val n = 4
 val fs = Array.tabulate (n, fn i =>
                          let
                             val f = F.new i
-                            val _ = 
+                            val _ =
                                F.addFinalizer
                                (f, fn i =>
                                 print (concat [Int.toString i, " gone.\n"]))

@@ -1,5 +1,4 @@
-(* Copyright (C) 2010-2011,2013-2014 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,7 +6,7 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor LookupConstant (S: LOOKUP_CONSTANT_STRUCTS): LOOKUP_CONSTANT = 
+functor LookupConstant (S: LOOKUP_CONSTANT_STRUCTS): LOOKUP_CONSTANT =
 struct
 
 open S
@@ -29,10 +28,10 @@ val buildConstants: (string * (unit -> string)) list =
                                               Align4 => 4
                                             | Align8 => 8)),
        ("MLton_Codegen_codegen", fn () => int (case !codegen of
-                                                  CCodegen => 0
-                                                | X86Codegen => 1
-                                                | AMD64Codegen => 2
-                                                | LLVMCodegen => 3)),
+                                                  Bytecode => 0
+                                                | CCodegen => 1
+                                                | x86Codegen => 2
+                                                | amd64Codegen => 3)),
        ("MLton_FFI_numExports", fn () => int (Ffi.numExports ())),
        ("MLton_Platform_Format", fn () => case !format of
                                              Archive => "archive"
@@ -55,11 +54,14 @@ val gcFields =
     "currentThread",
     "sourceMaps.curSourceSeqsIndex",
     "exnStack",
+    "ffiOpArgsResPtr",
     "frontier",
     "generationalMaps.cardMapAbsolute",
+    "globalObjptrNonRoot",
     "limit",
     "limitPlusSlop",
     "maxFrameSize",
+    "returnToC",
     "signalsInfo.signalIsPending",
     "stackBottom",
     "stackLimit",
@@ -69,14 +71,12 @@ val gcFields =
 val gcFieldsOffsets =
    List.map (gcFields, fn s =>
              {name = s ^ "_Offset",
-              value = concat ["(", Ffi.CType.toString Ffi.CType.Word32 ,")",
-                              "(offsetof (struct GC_state, ", s, "))"],
+              value = concat ["offsetof (struct GC_state, ", s, ")"],
               ty = ConstType.Word WordSize.word32})
 val gcFieldsSizes =
    List.map (gcFields, fn s =>
              {name = s ^ "_Size",
-              value = concat ["(", Ffi.CType.toString Ffi.CType.Word32 ,")",
-                              "(sizeof (gcState.", s, "))"],
+              value = concat ["sizeof (gcState.", s, ")"],
               ty = ConstType.Word WordSize.word32})
 
 fun build (constants, out) =
@@ -103,7 +103,7 @@ fun build (constants, out) =
                   Bool => ("%s", concat [value, "? \"true\" : \"false\""])
                 | Real _ => ("%.20f", value)
                 | String => ("%s", value)
-                | Word ws => 
+                | Word ws =>
                      (case WordSize.prim (WordSize.roundUpToPrim ws) of
                          WordSize.W8 => "%\"PRIu8\""
                        | WordSize.W16 => "%\"PRIu16\""
@@ -126,7 +126,7 @@ fun load (ins: In.t, commandLineConstants)
       fun add {name, value} =
          let
             val hash = String.hash name
-            val _ = 
+            val _ =
                HashSet.lookupOrInsert
                (table, hash,
                 fn {name = name', ...} => name = name',
@@ -144,12 +144,12 @@ fun load (ins: In.t, commandLineConstants)
           in
              add {name = name, value = value}
           end)
-      val _ = 
+      val _ =
          In.foreachLine
          (ins, fn l =>
           case String.tokens (l, Char.isSpace) of
              [name, "=", value] => add {name = name, value = value}
-           | _ => Error.bug 
+           | _ => Error.bug
                   (concat ["LookupConstants.load: strange constants line: ", l]))
       fun lookupConstant ({default, name}, ty: ConstType.t): Const.t =
          let
@@ -162,9 +162,9 @@ fun load (ins: In.t, commandLineConstants)
                    fn {name = name', ...} => name = name',
                    fn () =>
                    case default of
-                      NONE => Error.bug 
+                      NONE => Error.bug
                               (concat ["LookupConstants.load.lookupConstant: ",
-                                       "constant not found: ", 
+                                       "constant not found: ",
                                        name])
                     | SOME value =>
                          {hash = hash,

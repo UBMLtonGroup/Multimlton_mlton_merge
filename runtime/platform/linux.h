@@ -14,6 +14,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <plpa.h>
 #include <poll.h>
 #include <pwd.h>
 #include <sys/ioctl.h>
@@ -26,7 +27,6 @@
 #include <sys/un.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
-#include <sys/sysinfo.h>
 #include <syslog.h>
 #include <termios.h>
 #include <utime.h>
@@ -36,18 +36,30 @@
 #else
 #define HAS_FEROUND TRUE
 #endif
+#define HAS_FPCLASSIFY TRUE
 #define HAS_MSG_DONTWAIT TRUE
 #define HAS_REMAP TRUE
 #define HAS_SIGALTSTACK TRUE
+#define HAS_SIGNBIT TRUE
 #define HAS_SPAWN FALSE
 #define HAS_TIME_PROFILING TRUE
 
 #define MLton_Platform_OS_host "linux"
 
 // environ is already defined if _GNU_SOURCE is.
-#if !defined(_GNU_SOURCE) && !defined(__ANDROID__)
+#ifndef _GNU_SOURCE
 extern char **environ; /* for Posix_ProcEnv_environ */
 #endif
+
+#define set_cpu_affinity(num) do {                                      \
+        plpa_cpu_set_t cpuset;                                          \
+                                                                        \
+        PLPA_CPU_ZERO (&cpuset);                                        \
+        PLPA_CPU_SET (num, &cpuset);                                    \
+        if (plpa_sched_setaffinity (0, sizeof(cpuset), &cpuset)) {      \
+                fprintf (stderr, "Warning: unable to set CPU affinity\n"); \
+        }                                                               \
+      } while (0)
 
 /* The following is compatibility code with older glibc and kernel
    versions. */
@@ -58,40 +70,8 @@ typedef __kernel_suseconds_t suseconds_t;
 #define __suseconds_t_defined
 #endif
 
-#ifdef __GLIBC__
 #if __GLIBC__ == 2 && __GLIBC_MINOR__ <= 1
 typedef unsigned long int nfds_t;
-#endif
-#endif
-
-#ifdef __ANDROID__
-/* Work around buggy android system libraries */
-#undef PRIxPTR
-#define PRIxPTR "x"
-
-/* Needed for fetching program counter */
-#include <platform/android_ucontext.h>
-
-/* Android is missing these methods: */
-#undef tcdrain
-#undef ctermid
-#define tcdrain MLton_tcdrain
-#define ctermid MLton_ctermid
-
-static inline int tcdrain(int fd) {
-  return ioctl(fd, TCSBRK, 1);
-}
-
-static inline char* ctermid(char* x) {
-  static char buf[] = "/dev/tty";
-  if (x) {
-    strcpy(x, buf);
-    return x;
-  } else {
-    return &buf[0];
-  }
-}
-
 #endif
 
 #ifndef SO_ACCEPTCONN

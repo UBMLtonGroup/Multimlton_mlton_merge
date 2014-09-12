@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2005, 2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2005, 2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,7 +6,7 @@
  * See the file MLton-LICENSE for details.
  *)
 
-(* This pass must happen before polymorphic equality is implemented because
+(* This pass must happen before polymorphic equality is implemented becuase
  * 1. it will make polymorphic equality faster because some types are simpler
  * 2. it removes uses of polymorphic equality that must return true
  *
@@ -32,12 +31,12 @@
  *   Useful: otherwise
  * This pass also removes Useless and Transparent constructors.
  *
- * We must keep track of Transparent constructors whose argument type
+ * We must keep track of Transparent consturctors whose argument type
  * uses Tycon.array because of datatypes like the following:
- *   datatype t = T of t array
+ *   datatype t = T of t vector
  * Such a datatype has Cardinality.Many, but we cannot eliminate
  * the datatype and replace the lhs by the rhs, i.e. we must keep the
- * circularity around.
+ * circularity around .
  * Must do similar things for vectors.
  * 
  * Also, to eliminate as many Transparent constructors as possible, for
@@ -50,11 +49,13 @@
  * where all uses of t are replaced by u array.
  *)
 
-functor SimplifyTypes (S: SSA_TRANSFORM_STRUCTS): SSA_TRANSFORM = 
+functor SimplifyTypes (S: SIMPLIFY_TYPES_STRUCTS): SIMPLIFY_TYPES = 
 struct
 
 open S
 open Exp Transfer
+type int = Int.t
+
 structure Cardinality =
    struct
       datatype t = Zero | One | Many
@@ -106,7 +107,7 @@ structure Result =
          end
    end
 
-fun transform (Program.T {datatypes, globals, functions, main}) =
+fun simplify (Program.T {datatypes, globals, functions, main}) =
    let
       val {get = conInfo: Con.t -> {rep: ConRep.t ref,
                                     args: Type.t vector},
@@ -123,15 +124,15 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
       val conRep = ! o #rep o conInfo
       val conArgs = #args o conInfo
       fun setConRep (con, r) = #rep (conInfo con) := r
-      val setConRep =
-         Trace.trace2
-         ("SimplifyTypes.setConRep", Con.layout, ConRep.layout, Unit.layout)
-         setConRep
       val conIsUseful = ConRep.isUseful o conRep
       val conIsUseful =
          Trace.trace 
          ("SimplifyTypes.conIsUseful", Con.layout, Bool.layout) 
          conIsUseful
+      val setConRep =
+         Trace.trace2 
+         ("SimplifyTypes.setConRep", Con.layout, ConRep.layout, Unit.layout)
+         setConRep
       (* Initialize conInfo *)
       val _ =
          Vector.foreach
@@ -214,34 +215,45 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
           end)
       (* Build the dependents for each tycon. *)
       val _ =
-         Vector.foreach
-         (datatypes, fn Datatype.T {tycon, cons} =>
-          let
-             datatype z = datatype Type.dest
-             val {get = setTypeDependents, destroy = destroyTypeDependents} =
-                Property.destGet
-                (Type.plist,
-                 Property.initRec
-                 (fn (t, setTypeDependents) =>
-                  case Type.dest t of
-                     Array t => setTypeDependents t
-                   | CPointer => ()
-                   | Datatype tycon' =>
-                        List.push (#dependents (tyconInfo tycon'), tycon)
-                   | IntInf => ()
-                   | Real _ => ()
-                   | Ref t => setTypeDependents t
-                   | Thread => ()
-                   | Tuple ts => Vector.foreach (ts, setTypeDependents)
-                   | Vector t => setTypeDependents t
-                   | Weak t => setTypeDependents t
-                   | Word _ => ()))
-             val _ =
-                Vector.foreach (cons, fn {args, ...} =>
-                                Vector.foreach (args, setTypeDependents))
-             val _ = destroyTypeDependents ()
-          in ()
-          end)
+         let
+            val _ =
+               Vector.foreach
+               (datatypes, fn Datatype.T {tycon, cons} =>
+                let
+                   val {get = isDependent, set = setDependent, destroy} =
+                      Property.destGetSet (Tycon.plist, Property.initConst false)
+                   fun setTypeDependents t =
+                      let
+                         datatype z = datatype Type.dest
+                      in
+                         case Type.dest t of
+                            Array t => setTypeDependents t
+                          | CPointer => ()
+                          | Datatype tycon' =>
+                               if isDependent tycon'
+                                  then ()
+                               else (setDependent (tycon', true)
+                                     ; List.push (#dependents
+                                                  (tyconInfo tycon'),
+                                                  tycon))
+                          | IntInf => ()
+                          | Real _ => ()
+                          | Ref t => setTypeDependents t
+                          | Thread => ()
+                          | Tuple ts => Vector.foreach (ts, setTypeDependents)
+                          | Vector t => setTypeDependents t
+                          | Weak t => setTypeDependents t
+                          | Word _ => ()
+                      end
+                   val _ =
+                      Vector.foreach (cons, fn {args, ...} =>
+                                      Vector.foreach (args, setTypeDependents))
+                   val _ = destroy ()
+                in ()
+                end)
+         in ()
+         end
+
       (* diagnostic *)
       val _ =
          Control.diagnostics
@@ -260,10 +272,10 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
       in
          fun typeCardinality t =
             case dest t of
-               Datatype tycon => tyconCardinality tycon
-             | Ref t => pointerCardinality t
-             | Tuple ts => tupleCardinality ts
+               Ref t => pointerCardinality t
              | Weak t => pointerCardinality t
+             | Tuple ts => tupleCardinality ts
+             | Datatype tycon => tyconCardinality tycon
              | _ => Many
          and pointerCardinality (t: Type.t) =
             case typeCardinality t of
@@ -282,7 +294,7 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
               ; One))
       end
       fun conCardinality {args, con = _} = tupleCardinality args
-      (* Compute the tycon cardinalities with a fixed point,
+      (* Compute the tycon cardinalitues with a fixed point,
        * initially assuming every datatype tycon cardinality is Zero.
        *)
       val _ =
@@ -398,27 +410,21 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
       fun containsTycon (ty: Type.t, tyc: Tycon.t): bool =
          let
             datatype z = datatype Type.dest
-            val {get = containsTycon, destroy = destroyContainsTycon} =
-               Property.destGet
-               (Type.plist,
-                Property.initRec
-                (fn (t, containsTycon) =>
-                 case Type.dest t of
-                    Array t => containsTycon t
-                  | Datatype tyc' =>
-                       (case tyconReplacement tyc' of
-                           NONE => Tycon.equals (tyc, tyc')
-                         | SOME t => containsTycon t)
-                  | Tuple ts => Vector.exists (ts, containsTycon)
-                  | Ref t => containsTycon t
-                  | Vector t => containsTycon t
-                  | Weak t => containsTycon t
-                  | _ => false))
-            val res = containsTycon ty
-            val () = destroyContainsTycon ()
-         in res
+            fun loop t =
+               case Type.dest t of
+                  Array t => loop t
+                | Datatype tyc' =>
+                     (case tyconReplacement tyc' of
+                         NONE => Tycon.equals (tyc, tyc')
+                       | SOME t => loop t)
+                | Tuple ts => Vector.exists (ts, loop)
+                | Ref t => loop t
+                | Vector t => loop t
+                | Weak t => loop t
+                | _ => false
+         in loop ty
          end
-      (* Keep the circular transparent tycons, ditch the rest. *)
+      (* Keep the circular transparent cons, ditch the rest. *)
       val datatypes =
          List.fold
          (unary, datatypes, fn ({tycon, con, args}, accum) =>
@@ -446,7 +452,11 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
               val keepSimplifyTypes = makeKeepSimplifyTypes simplifyType
               open Type
            in case dest t of
-              Array t => array (simplifyType t)
+              Tuple ts => Type.tuple (keepSimplifyTypes ts)
+            | Array t => array (simplifyType t)
+            | Vector t => vector (simplifyType t)
+            | Ref t => reff (simplifyType t)
+            | Weak t => weak (simplifyType t)
             | Datatype tycon => 
                  (case tyconReplacement tycon of
                      SOME t =>
@@ -457,10 +467,6 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                            t
                         end
                    | NONE => t)
-            | Ref t => reff (simplifyType t)
-            | Tuple ts => Type.tuple (keepSimplifyTypes ts)
-            | Vector t => vector (simplifyType t)
-            | Weak t => weak (simplifyType t)
             | _ => t
            end))
       val simplifyType =

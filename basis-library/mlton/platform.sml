@@ -1,4 +1,4 @@
-(* Copyright (C) 2003-2009 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2003-2006, 2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -20,15 +20,13 @@ structure MLtonPlatform: MLTON_PLATFORM =
                 (Alpha, "Alpha"),
                 (AMD64, "AMD64"),
                 (ARM, "ARM"),
-                (ARM64, "ARM64"),
                 (HPPA, "HPPA"),
                 (IA64, "IA64"),
                 (m68k, "m68k"),
                 (MIPS, "MIPS"),
-                (PowerPC, "PowerPC"),
-                (PowerPC64, "PowerPC64"),
+                (PowerPC, "PowerPC"), 
                 (S390, "S390"),
-                (Sparc, "Sparc"),
+                (Sparc, "Sparc"), 
                 (X86, "X86")]
 
             fun fromString s =
@@ -70,7 +68,6 @@ structure MLtonPlatform: MLTON_PLATFORM =
                 (Cygwin, "Cygwin"),
                 (Darwin, "Darwin"),
                 (FreeBSD, "FreeBSD"),
-                (Hurd, "Hurd"),
                 (HPUX, "HPUX"),
                 (Linux, "Linux"),
                 (MinGW, "MinGW"),

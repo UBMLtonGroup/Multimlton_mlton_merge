@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,10 +6,12 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor Useless (S: SSA_TRANSFORM_STRUCTS): SSA_TRANSFORM = 
+functor Useless (S: USELESS_STRUCTS): USELESS = 
 struct
 
 open S
+type int = Int.t
+
 (* useless thing elimination
  *  remove components of tuples that are constants (use unification)
  *  remove function arguments that are constants
@@ -400,7 +401,7 @@ structure Value =
 
 structure Exists = Value.Exists
 
-fun transform (program: Program.t): Program.t =
+fun useless (program: Program.t): Program.t =
    let
       val program as Program.T {datatypes, globals, functions, main} =
          eliminateDeadBlocks program

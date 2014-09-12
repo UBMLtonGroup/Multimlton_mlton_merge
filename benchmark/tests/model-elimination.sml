@@ -8793,9 +8793,6 @@ in
   ()
 end;
 
-fun doit n =
-   if n = 0
-      then ()
-   else (main (); doit (n - 1))
+val doit = main
 
 end

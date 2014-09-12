@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 2004-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2004-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -10,6 +9,8 @@ functor ObjptrTycon (S: OBJPTR_TYCON_STRUCTS): OBJPTR_TYCON =
 struct
 
 open S
+
+type int = Int.t
 
 datatype t = T of {index: int ref}
 
@@ -58,5 +59,8 @@ in
        | 64 => word64Vector
        | _ => Error.bug "ObjptrTycon.wordVector"
 end
+
+val headerOnly = new ()
+val fill = new ()
 
 end

@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -89,7 +88,7 @@ structure Scheme =
       val fromString =
          String.memoizeList (fn _ => Error.bug "Url.Scheme.fromString", map)
 
-      val equals: t * t -> bool = op =
+      val equals = op =
 
       fun toString s =
          #1 (valOf (List.peek (map, fn (_, s') => equals (s, s'))))
@@ -253,7 +252,7 @@ val layout =
                        ("fragment", Option.layout String.layout fragment)]
     | u => layout u
 
-val equals: t * t -> bool = op =
+val equals = op =
 
 structure Regexp =
    struct

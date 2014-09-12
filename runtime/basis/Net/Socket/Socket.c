@@ -1,47 +1,26 @@
 #include "platform.h"
 
 C_Errno_t(C_Int_t) Socket_accept (C_Sock_t s, Array(Word8_t) addr, Ref(C_Socklen_t) addrlen) {
-  int out;
-  
   MLton_initSockets ();
-  out = accept (s, (struct sockaddr*)addr, (socklen_t*)addrlen);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return accept (s, (struct sockaddr*)addr, (socklen_t*)addrlen);
 }
 
 C_Errno_t(C_Int_t) Socket_bind (C_Sock_t s, Vector(Word8_t) addr, C_Socklen_t addrlen) {
-  int out;
-  
   MLton_initSockets ();
-  out = bind (s, (const struct sockaddr*)addr, (socklen_t)addrlen);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return bind (s, (const struct sockaddr*)addr, (socklen_t)addrlen);
 }
 
 C_Errno_t(C_Int_t) Socket_close(C_Sock_t s) {
 #ifdef __MINGW32__
-  int out;
-  
-  MLton_initSockets ();
-  out = closesocket(s);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return closesocket(s);
 #else
   return close(s);
 #endif
 }
 
 C_Errno_t(C_Int_t) Socket_connect (C_Sock_t s, Vector(Word8_t) addr, C_Socklen_t addrlen) {
-  int out;
-  
   MLton_initSockets ();
-  out = connect (s, (const struct sockaddr*)addr, (socklen_t)addrlen);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return connect (s, (const struct sockaddr*)addr, (socklen_t)addrlen);
 }
 
 C_Int_t Socket_familyOfAddr(Vector(Word8_t) addr) {
@@ -49,51 +28,31 @@ C_Int_t Socket_familyOfAddr(Vector(Word8_t) addr) {
 }
 
 C_Errno_t(C_Int_t) Socket_listen (C_Sock_t s, C_Int_t backlog) {
-  int out;
-  
   MLton_initSockets ();
-  out = listen (s, backlog);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return listen (s, backlog);
 }
 
 C_Errno_t(C_SSize_t) 
 Socket_recv (C_Sock_t s, Array(Word8_t) msg, 
              C_Int_t start, C_Size_t len, C_Int_t flags) {
-  ssize_t out;
-  
   MLton_initSockets ();
-  out = MLton_recv (s, (void*)((char *)msg + start), len, flags);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return MLton_recv (s, (void*)((char *)msg + start), len, flags);
 }
 
 C_Errno_t(C_SSize_t) 
 Socket_recvFrom (C_Sock_t s, Array(Word8_t) msg, 
                  C_Int_t start, C_Size_t len, C_Int_t flags,
                  Array(Word8_t) addr, Ref(C_Socklen_t) addrlen) {
-  ssize_t out;
-  
   MLton_initSockets ();
-  out = MLton_recvfrom (s, (void*)((char *)msg + start), len, flags,
-                        (struct sockaddr*)addr, (socklen_t*)addrlen);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return MLton_recvfrom (s, (void*)((char *)msg + start), len, flags,
+                         (struct sockaddr*)addr, (socklen_t*)addrlen);
 }
 
 static inline C_Errno_t(C_SSize_t)
 Socket_send (C_Sock_t s, Pointer msg, 
              C_Int_t start, C_Size_t len, C_Int_t flags) {
-  ssize_t out;
-  
   MLton_initSockets ();
-  out = send (s, (void*)((char *)msg + start), len, flags);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return send (s, (void*)((char *)msg + start), len, flags);
 }
 
 C_Errno_t(C_SSize_t)
@@ -111,14 +70,9 @@ static inline C_Errno_t(C_SSize_t)
 Socket_sendTo (C_Sock_t s, Pointer msg, 
                C_Int_t start, C_Size_t len, C_Int_t flags,
                Vector(Word8_t) addr, C_Socklen_t addrlen) {
-  ssize_t out;
-  
   MLton_initSockets ();
-  out = sendto (s, (void*)((char *)msg + start), len, flags,
-                (const struct sockaddr*)addr, (socklen_t)addrlen);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return sendto (s, (void*)((char *)msg + start), len, flags,
+                 (const struct sockaddr*)addr, (socklen_t)addrlen);
 }
 
 C_Errno_t(C_SSize_t) 
@@ -135,111 +89,42 @@ Socket_sendVecTo (C_Sock_t s, Vector(Word8_t) msg,
 }
 
 C_Errno_t(C_Int_t) Socket_shutdown (C_Sock_t s, C_Int_t how) {
-  int out;
-  
   MLton_initSockets ();
-  out = shutdown (s, how);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return shutdown (s, how);
 }
 
 C_Errno_t(C_Int_t) 
-Socket_Ctl_getSockOptC_Int (C_Sock_t s, C_Int_t level, C_Int_t optname,
-                            Ref(C_Int_t) optval) {
-  socklen_t optlen = sizeof(int);
-  int out;
-  
+Socket_Ctl_getSockOpt (C_Sock_t s, C_Int_t level, C_Int_t optname, 
+                       Array(Word8_t) optval, Ref(C_Socklen_t) optlen) {
   MLton_initSockets ();
-  out = getsockopt (s, level, optname, optval, &optlen);
-  assert (optlen == sizeof(int));
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return getsockopt (s, level, optname, (void*)optval, (socklen_t*)optlen);
 }
 
 C_Errno_t(C_Int_t)
-Socket_Ctl_setSockOptC_Int (C_Sock_t s, C_Int_t level, C_Int_t optname,
-                            C_Int_t optval) {
-  socklen_t optlen = sizeof(int);
-  int out;
-  
+Socket_Ctl_setSockOpt (C_Sock_t s, C_Int_t level, C_Int_t optname, 
+                       Vector(Word8_t) optval, C_Socklen_t optlen) {
   MLton_initSockets ();
-  out = setsockopt (s, level, optname, &optval, optlen);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return setsockopt (s, level, optname, (const void*)optval, (socklen_t)optlen);
 }
 
-C_Errno_t(C_Int_t)
-Socket_Ctl_getSockOptC_Linger (C_Sock_t s, C_Int_t level, C_Int_t optname,
-                               Ref(C_Int_t) optval_l_onoff, Ref(C_Int_t) optval_l_linger) {
-  struct linger optval;
-  socklen_t optlen = sizeof(struct linger);
-  int out;
-
+C_Errno_t(C_Int_t) 
+Socket_Ctl_getIOCtl (C_Sock_t s, C_Int_t request, Array(Word8_t) argp) {
   MLton_initSockets ();
-  out = getsockopt (s, level, optname, &optval, &optlen);
-  assert (optlen == sizeof(struct linger));
-  *((int*)optval_l_onoff) = optval.l_onoff;
-  *((int*)optval_l_linger) = optval.l_linger;
-  if (out == -1) MLton_fixSocketErrno ();
-
-  return out;
+  return ioctl (s, request, (void*)argp);
 }
 
-C_Errno_t(C_Int_t)
-Socket_Ctl_setSockOptC_Linger (C_Sock_t s, C_Int_t level, C_Int_t optname,
-                               C_Int_t optval_l_onoff, C_Int_t optval_l_linger) {
-  struct linger optval;
-  socklen_t optlen = sizeof(struct linger);
-  int out;
-
+C_Errno_t(C_Int_t) 
+Socket_Ctl_setIOCtl (C_Sock_t s, C_Int_t request, Vector(Word8_t) argp) {
   MLton_initSockets ();
-  optval.l_onoff = optval_l_onoff;
-  optval.l_linger = optval_l_linger;
-  out = setsockopt (s, level, optname, &optval, optlen);
-  if (out == -1) MLton_fixSocketErrno ();
-
-  return out;
+  return ioctl (s, request, (const void*)argp);
 }
 
 C_Errno_t(C_Int_t) Socket_Ctl_getPeerName (C_Sock_t s, Array(Word8_t) name, Ref(C_Socklen_t) namelen) {
-  int out;
-  
   MLton_initSockets ();
-  out = getpeername (s, (struct sockaddr*)name, (socklen_t*)namelen);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
+  return getpeername (s, (struct sockaddr*)name, (socklen_t*)namelen);
 }
 
 C_Errno_t(C_Int_t) Socket_Ctl_getSockName (C_Sock_t s, Array(Word8_t) name, Ref(C_Socklen_t) namelen) {
-  int out;
-  
   MLton_initSockets ();
-  out = getsockname (s, (struct sockaddr*)name, (socklen_t*)namelen);
-  if (out == -1) MLton_fixSocketErrno ();
-  
-  return out;
-}
-
-C_Errno_t(C_Int_t)
-Socket_Ctl_getNREAD (C_Sock_t s, Ref(C_Int_t) argp) {
-  int out;
-
-  out = ioctl (s, FIONREAD, &argp);
-  if (out == -1) MLton_fixSocketErrno ();
-
-  return out;
-}
-
-C_Errno_t(C_Int_t)
-Socket_Ctl_getATMARK (C_Sock_t s, Ref(C_Int_t) argp) {
-  int out;
-
-  out = ioctl (s, SIOCATMARK, &argp);
-  if (out == -1) MLton_fixSocketErrno ();
-
-  return out;
+  return getsockname (s, (struct sockaddr*)name, (socklen_t*)namelen);
 }

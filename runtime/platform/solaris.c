@@ -4,6 +4,7 @@
 
 #include "diskBack.unix.c"
 #include "float-math.c"
+#include "mkdir2.c"
 #include "mmap.c"
 #include "mmap-protect.c"
 #include "nonwin.c"
@@ -40,6 +41,31 @@ int fesetround (int mode) {
 }
 #endif /* __sparc__ */
 
+int fpclassify64 (double d) {
+        fpclass_t c;
+
+        c = fpclass (d);
+        switch (c) {
+        case FP_SNAN:
+        case FP_QNAN:
+                return FP_NAN;
+        case FP_NINF:
+        case FP_PINF:
+                return FP_INFINITE;
+        case FP_NDENORM:
+        case FP_PDENORM:
+                return FP_SUBNORMAL;
+        case FP_NZERO:
+        case FP_PZERO:
+                return FP_ZERO;
+        case FP_NNORM:
+        case FP_PNORM:
+                return FP_NORMAL;
+        default:
+                die ("Real_class error: invalid class %d\n", c);
+        }
+}
+
 /* ------------------------------------------------- */
 /*                        GC                         */
 /* ------------------------------------------------- */
@@ -50,10 +76,9 @@ void GC_displayMem (void) {
         system (buffer);
 }
 
-static void catcher (__attribute__ ((unused)) int signo,
-                     __attribute__ ((unused)) siginfo_t* info,
-                     void* context) {
-        ucontext_t* ucp = (ucontext_t*)context;
+static void catcher (__attribute__ ((unused)) int sig,
+                     __attribute__ ((unused)) siginfo_t *sip,
+                     ucontext_t *ucp) {
         GC_handleSigProf ((code_pointer) ucp->uc_mcontext.gregs[REG_PC]);
 }
 

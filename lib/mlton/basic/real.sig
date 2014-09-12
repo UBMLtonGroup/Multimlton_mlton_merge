@@ -1,10 +1,11 @@
-(* Copyright (C) 2009,2011 Matthew Fluet.
- * Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
  * See the file MLton-LICENSE for details.
  *)
+
+type int = Int.t
 
 signature REAL =
    sig
@@ -60,7 +61,6 @@ signature REAL =
       val input: In0.t -> t
       val inverse: t -> t
       val isFinite: t -> bool
-      val isNan: t -> bool
       val layout: t -> Layout.t
       val ln: t -> t
       val log2: t -> t

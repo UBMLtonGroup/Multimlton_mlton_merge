@@ -10,6 +10,7 @@ pointer GC_arrayAllocate (GC_state s,
                           size_t ensureBytesFree,
                           GC_arrayLength numElements,
                           GC_header header) {
+  uintmax_t arraySizeMax, arraySizeAlignedMax;
   size_t arraySize, arraySizeAligned;
   size_t bytesPerElement;
   uint16_t bytesNonObjptrs;
@@ -17,27 +18,21 @@ pointer GC_arrayAllocate (GC_state s,
   pointer frontier;
   pointer last;
   pointer result;
+  bool holdLock;
 
   splitHeader(s, header, NULL, NULL, &bytesNonObjptrs, &numObjptrs);
   if (DEBUG)
-    fprintf (stderr, "GC_arrayAllocate (%"PRIuMAX", "FMTARRLEN", "FMTHDR")\n",
-             (uintmax_t)ensureBytesFree, numElements, header);
+    fprintf (stderr, "GC_arrayAllocate (%"PRIuMAX", "FMTARRLEN", "FMTHDR") [%d]\n",
+             (uintmax_t)ensureBytesFree, numElements, header, Proc_processorNumber (s));
   bytesPerElement = bytesNonObjptrs + (numObjptrs * OBJPTR_SIZE);
-  /* Check for overflow when computing arraySize.
-   * Note: bytesPerElement > 0
-   */
-  if (numElements > (SIZE_MAX / bytesPerElement)) {
-    goto doOverflow;
-  }
-  arraySize = bytesPerElement * numElements;
-  if (arraySize > SIZE_MAX - GC_ARRAY_HEADER_SIZE) {
-    goto doOverflow;
-  }
-  arraySize += GC_ARRAY_HEADER_SIZE;
-  arraySizeAligned = align (arraySize, s->alignment);
-  if (arraySizeAligned < arraySize) {
-    goto doOverflow;
-  }
+  arraySizeMax =
+    (uintmax_t)bytesPerElement * (uintmax_t)numElements + GC_ARRAY_HEADER_SIZE;
+  arraySizeAlignedMax = alignMax (arraySizeMax, s->alignment);
+  if (arraySizeAlignedMax >= (uintmax_t)SIZE_MAX)
+    die ("Out of memory.  Unable to allocate array with %s bytes.",
+         uintmaxToCommaString(arraySizeAlignedMax));
+  arraySize = (size_t)arraySizeMax;
+  arraySizeAligned = (size_t)arraySizeAlignedMax;
   if (arraySizeAligned < GC_ARRAY_HEADER_SIZE + OBJPTR_SIZE) {
     /* Very small (including empty) arrays have OBJPTR_SIZE bytes
      * space for the forwarding pointer.
@@ -53,30 +48,47 @@ pointer GC_arrayAllocate (GC_state s,
              uintmaxToCommaString(arraySize),
              uintmaxToCommaString(arraySizeAligned),
              uintmaxToCommaString(ensureBytesFree));
-  if (arraySizeAligned >= s->controls.oldGenArraySize) {
+
+  /* Determine whether we will perform this allocation locally or not */
+  holdLock = arraySizeAligned >= s->controls->oldGenArraySize;
+
+  if (holdLock) {
+    /* Global alloc */
+    s->syncReason = SYNC_OLD_GEN_ARRAY;
+    ENTER0 (s);
     if (not hasHeapBytesFree (s, arraySizeAligned, ensureBytesFree)) {
-      enter (s);
       performGC (s, arraySizeAligned, ensureBytesFree, FALSE, TRUE);
-      leave (s);
     }
-    frontier = s->heap.start + s->heap.oldGenSize;
-    s->heap.oldGenSize += arraySizeAligned;
-    s->cumulativeStatistics.bytesAllocated += arraySizeAligned;
+    assert (hasHeapBytesFree (s, arraySizeAligned, ensureBytesFree));
+    frontier = s->heap->start + s->heap->oldGenSize;
+    assert (isFrontierAligned (s, frontier));
+
+    /* This must be updated while holding the lock! */
+    s->heap->oldGenSize += arraySizeAligned;
+    assert (s->heap->start + s->heap->oldGenSize <= s->heap->nursery);
+    s->cumulativeStatistics->bytesAllocated += arraySizeAligned;
+    /* NB LEAVE appears below since no heap invariant holds while the
+       oldGenSize has been updated but the array remains uninitialized. */
   } else {
+    /* Local alloc */
     size_t bytesRequested;
     pointer newFrontier;
 
     bytesRequested = arraySizeAligned + ensureBytesFree;
     if (not hasHeapBytesFree (s, 0, bytesRequested)) {
-      enter (s);
-      performGC (s, 0, bytesRequested, FALSE, TRUE);
-      leave (s);
+      /* Local alloc may still require getting the lock, but we will release
+         it before initialization. */
+      ensureHasHeapBytesFreeAndOrInvariantForMutator (s, FALSE, FALSE, FALSE,
+                                                      0, bytesRequested, FALSE, FALSE);
     }
+    assert (hasHeapBytesFree (s, 0, bytesRequested));
     frontier = s->frontier;
     newFrontier = frontier + arraySizeAligned;
     assert (isFrontierAligned (s, newFrontier));
     s->frontier = newFrontier;
   }
+
+  /* Now do the initialization */
   last = frontier + arraySize;
   *((GC_arrayCounter*)(frontier)) = 0;
   frontier = frontier + GC_ARRAY_COUNTER_SIZE;
@@ -112,8 +124,8 @@ pointer GC_arrayAllocate (GC_state s,
   }
   GC_profileAllocInc (s, arraySizeAligned);
   if (DEBUG_ARRAY) {
-    fprintf (stderr, "GC_arrayAllocate done.  result = "FMTPTR"  frontier = "FMTPTR"\n",
-             (uintptr_t)result, (uintptr_t)s->frontier);
+    fprintf (stderr, "GC_arrayAllocate done.  result = "FMTPTR"  frontier = "FMTPTR" [%d]\n",
+             (uintptr_t)result, (uintptr_t)s->frontier, Proc_processorNumber (s));
     displayGCState (s, stderr);
   }
   assert (ensureBytesFree <= (size_t)(s->limitPlusSlop - s->frontier));
@@ -121,9 +133,10 @@ pointer GC_arrayAllocate (GC_state s,
    * unless we did the GC, we never set s->currentThread->stack->used
    * to reflect what the mutator did with stackTop.
    */
-  return result;
 
-doOverflow:
-  die ("Out of memory.  Unable to allocate array with "FMTARRLEN" elements and elements of size %"PRIuMAX" bytes.",
-       numElements, (uintmax_t)bytesPerElement);
+  if (holdLock) {
+    LEAVE1 (s, result);
+  }
+
+  return result;
 }

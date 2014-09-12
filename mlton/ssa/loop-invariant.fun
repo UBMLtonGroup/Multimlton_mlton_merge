@@ -18,13 +18,13 @@
  *     end
  *)
 
-functor LoopInvariant (S: SSA_TRANSFORM_STRUCTS): SSA_TRANSFORM = 
+functor LoopInvariant (S: LOOP_INVARIANT_STRUCTS): LOOP_INVARIANT = 
 struct
 
 open S
 open Exp Transfer
 
-fun transform (Program.T {globals, datatypes, functions, main}) =
+fun loopInvariant (Program.T {globals, datatypes, functions, main}) =
    let
       val shrink = shrinkFunction {globals = globals}
 

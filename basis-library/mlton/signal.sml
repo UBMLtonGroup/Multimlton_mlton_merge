@@ -11,9 +11,11 @@ struct
 
 open Posix.Signal
 structure Prim = PrimitiveFFI.Posix.Signal
+structure PrimWorld = Primitive.MLton.World
 structure Error = PosixError
 structure SysCall = Error.SysCall
 val restart = SysCall.restartFlag
+val gcState = Primitive.MLton.GCState.gcState
 
 type t = signal
 
@@ -26,9 +28,9 @@ fun raiseInval () =
       raiseSys inval
    end
 
-val validSignals = 
-   Array.tabulate 
-   (C_Int.toInt Prim.NSIG, fn i => 
+val validSignals =
+   Array.tabulate
+   (C_Int.toInt Prim.NSIG, fn i =>
     SysCall.syscallErr
     ({clear = false, restart = false, errVal = C_Int.fromInt ~1}, fn () =>
      {return = Prim.sigismember (repFromInt i),
@@ -82,7 +84,7 @@ structure Mask =
 
       local
          fun make (how: how) (m: t) =
-            (write m; SysCall.simpleRestart (fn () => Prim.sigprocmask how))
+            (write m; SysCall.simpleRestart (fn () => Prim.pthread_sigmask how))
       in
          val block = make Prim.SIG_BLOCK
          val unblock = make Prim.SIG_UNBLOCK
@@ -97,7 +99,7 @@ structure Mask =
             if Array.sub (validSignals, toInt s)
                then case mask of
                        AllBut sigs => not (member (sigs, s))
-                     | Some sigs => member (sigs, s)              
+                     | Some sigs => member (sigs, s)
                else raiseInval ()
       end
    end
@@ -114,40 +116,71 @@ structure Handler =
 datatype handler = datatype Handler.t
 
 local
-   val r = ref C_Int.zero
+   val numProcessors = PacmlFFI.numberOfProcessors
+   val procNum = PacmlFFI.processorNumber
+
+   (* XXX KC : per-thread state *)
+   val r = Array.tabulate(numProcessors, fn _ => ref C_Int.zero)
 in
    fun initHandler (s: signal): Handler.t =
       SysCall.syscallErr
       ({clear = false, restart = false, errVal = C_Int.fromInt ~1}, fn () =>
-       {return = Prim.isDefault (toRep s, r),
-        post = fn _ => if !r <> C_Int.zero then Default else Ignore,
+       {return = Prim.isDefault (toRep s, Array.unsafeSub(r,procNum())),
+        post = fn _ => if !(Array.unsafeSub(r,procNum())) <> C_Int.zero then Default else Ignore,
         handlers = [(Error.inval, fn () => InvalidSignal)]})
+
+    val gcHandlers = Array.tabulate(numProcessors, fn _ => Ignore)
 end
 
 val (getHandler, setHandler, handlers) =
    let
-      val handlers = Array.tabulate (C_Int.toInt Prim.NSIG, initHandler o fromInt)
-      val _ =
+      val localhandlers = fn () => Array.tabulate (C_Int.toInt Prim.NSIG, initHandler o fromInt)
+      (* A localHandlers array for each processor *)
+      val handlersArr = Array.tabulate
+      (PacmlFFI.numberOfProcessors, fn _ => localhandlers ())
+     fun init h =
          Cleaner.addNew
          (Cleaner.atLoadWorld, fn () =>
-          Array.modifyi (initHandler o fromInt o #1) handlers)
+          Array.modifyi (initHandler o fromInt o #1) h)
+
+     val numProc = PacmlFFI.numberOfProcessors
+     (* KC Used for CML *)
+     fun setHandlerForAll h s =
+     let
+       val _ = Array.tabulate(numProc, fn p =>
+                     Array.update(Array.unsafeSub(handlersArr,p), toInt
+                     s, h))
+     in
+       ()
+     end
+
+     (* Initialize localHandlers *)
+     val _ = Array.app init handlersArr
+
+     val procNum = PacmlFFI.processorNumber
    in
-      (fn s: t => Array.sub (handlers, toInt s),
+      (fn s: t => Array.sub (Array.unsafeSub(handlersArr, procNum()), toInt s),
        fn (s: t, h) => if Primitive.MLton.Profile.isOn andalso s = prof
                           then raiseInval ()
-                       else Array.update (handlers, toInt s, h),
-       handlers)
+                       else
+                         if (PrimWorld.getIsPCML gcState) andalso (s = alrm) andalso
+                         (case h of
+                            Handler _ => true
+                          | _ => false)
+                         then
+                           setHandlerForAll h s
+                         else
+                          Array.update (Array.unsafeSub (handlersArr,procNum ()), toInt s, h),
+       fn () => Array.unsafeSub(handlersArr, procNum()))
    end
-
-val gcHandler = ref Ignore
 
 fun handled () =
    Mask.some
    (Array.foldri
     (fn (s, h, sigs) =>
-     case h of 
+     case h of
         Handler _ => (fromInt s)::sigs
-      | _ => sigs) [] handlers)
+      | _ => sigs) [] (handlers()) )
 
 structure Handler =
    struct
@@ -188,10 +221,11 @@ structure Handler =
                 let
                    val mask = Mask.getBlocked ()
                    val () = Mask.block (handled ())
-                   val fs = 
-                      case !gcHandler of
-                         Handler f => if Prim.isPendingGC () <> C_Int.zero 
-                                         then [f] 
+                   val proc = PacmlFFI.processorNumber()
+                   val fs =
+                      case Array.unsafeSub(gcHandlers,proc) of
+                         Handler f => if Prim.isPendingGC () <> C_Int.zero
+                                         then [f]
                                          else []
                        | _ => []
                    val fs =
@@ -200,9 +234,9 @@ structure Handler =
                        case h of
                           Handler f =>
                              if Prim.isPending (repFromInt s) <> C_Int.zero
-                                then f::fs 
+                                then f::fs
                                 else fs
-                        | _ => fs) fs handlers
+                        | _ => fs) fs (handlers())
                    val () = Prim.resetPending ()
                    val () = Mask.setBlocked mask
                 in
@@ -220,18 +254,37 @@ val setHandler = fn (s, h) =>
       (InvalidSignal, _) => raiseInval ()
     | (_, InvalidSignal) => raiseInval ()
     | (Default, Default) => ()
-    | (_, Default) => 
+    (* KC don't call into c for CML & SIGALRM *)
+    | (_, Default) =>
          (setHandler (s, Default)
-          ; SysCall.simpleRestart (fn () => Prim.default (toRep s)))
+         (* Prevent this thread from handling C alrm signal if CML since
+          * we have installed a separate signal handler therad.
+          * XXX KC : pthread_sigmask is set in c-main.h. So Is this redundant??
+          *)
+         ; if (PrimWorld.getIsPCML gcState) andalso s = alrm then
+                ()
+           else
+                SysCall.simpleRestart (fn () => Prim.default (toRep s)))
+    (* XXX KC modified because the request may be for another processor*)
     | (Handler _, Handler _) =>
-         setHandler (s, h)
+         (setHandler (s, h)
+          ; if (PrimWorld.getIsPCML gcState) andalso s = alrm then
+                ()
+           else
+                SysCall.simpleRestart (fn () => Prim.handlee (toRep s)))
     | (_, Handler _) =>
          (setHandler (s, h)
-          ; SysCall.simpleRestart (fn () => Prim.handlee (toRep s)))
+          ; if (PrimWorld.getIsPCML gcState) andalso s = alrm then
+                ()
+           else
+               SysCall.simpleRestart (fn () => Prim.handlee (toRep s)))
     | (Ignore, Ignore) => ()
-    | (_, Ignore) => 
+    | (_, Ignore) =>
          (setHandler (s, Ignore)
-          ; SysCall.simpleRestart (fn () => Prim.ignore (toRep s)))
+          ;if (PrimWorld.getIsPCML gcState) andalso s = alrm then
+                ()
+           else
+                SysCall.simpleRestart (fn () => Prim.ignore (toRep s)))
 
 fun suspend m =
    (Mask.write m
@@ -240,6 +293,7 @@ fun suspend m =
 
 fun handleGC f =
    (Prim.handleGC ()
-    ; gcHandler := Handler.simple f)
+    ; Array.update (gcHandlers,PacmlFFI.processorNumber (),
+    Handler.simple f))
 
 end

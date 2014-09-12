@@ -1,12 +1,11 @@
-(* Copyright (C) 2013 Matthew Fluet.
- * Copyright (C) 2004-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2004-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
  * See the file MLton-LICENSE for details.
  *)
 
-ann  
+ann
    "deadCode true"
    "sequenceNonUnit warn"
    "nonexhaustiveMatch warn" "redundantMatch warn"
@@ -21,37 +20,23 @@ in
 
    ../integer/iwconv0.sml
    ../integer/num0.sml
-   local 
-      ../config/bind/int-prim.sml 
+   local
+      ../config/bind/int-prim.sml
       ../config/bind/pointer-prim.sml
-      ../config/bind/real-prim.sml 
-      ../config/bind/word-prim.sml 
+      ../config/bind/real-prim.sml
+      ../config/bind/word-prim.sml
    in ann "forceUsed" in
       ../config/objptr/objptr-$(OBJPTR_REP).sml
       ../config/header/header-$(HEADER_WORD).sml
       ../config/seqindex/seqindex-$(SEQINDEX_INT).sml
-      $(LIB_MLTON_DIR)/targets/$(TARGET)/sml/c-types.sml
+      ../config/c/$(TARGET_ARCH)-$(TARGET_OS)/c-types.sml
    end end
-
-   ../arrays-and-vectors/slice0.sig
-   ../arrays-and-vectors/sequence0.sig
+   ../integer/int-inf0.sml
    local
       local
          ../config/bind/int-prim.sml
          ../config/bind/int-inf-prim.sml
-      in ann "forceUsed" in 
-         ../config/default/default-$(DEFAULT_INT).sml
-      end end
-   in
-      ../arrays-and-vectors/sequence0.sml
-   end
-
-   ../integer/int-inf0.sml
-   local
-      local 
-         ../config/bind/int-prim.sml 
-         ../config/bind/int-inf-prim.sml 
-         ../config/bind/word-prim.sml 
+         ../config/bind/word-prim.sml
       in ann "forceUsed" in
          ../config/default/default-$(DEFAULT_INT).sml
          ../config/default/default-$(DEFAULT_WORD).sml
@@ -65,13 +50,13 @@ in
       ../integer/num1.sml
    end
 
-   local 
-      ../config/bind/char-prim.sml 
-      ../config/bind/int-prim.sml 
-      ../config/bind/int-inf-prim.sml 
-      ../config/bind/real-prim.sml 
-      ../config/bind/string-prim.sml 
-      ../config/bind/word-prim.sml 
+   local
+      ../config/bind/char-prim.sml
+      ../config/bind/int-prim.sml
+      ../config/bind/int-inf-prim.sml
+      ../config/bind/real-prim.sml
+      ../config/bind/string-prim.sml
+      ../config/bind/word-prim.sml
    in ann "forceUsed" in
       ../config/default/default-$(DEFAULT_CHAR).sml
       ../config/default/default-$(DEFAULT_WIDECHAR).sml
@@ -92,8 +77,8 @@ in
    ../list/list.sml
    ../list/list-pair.sig
    ../list/list-pair.sml
-   local 
-      ../config/bind/int-prim.sml 
+   local
+      ../config/bind/int-prim.sml
    in ann "forceUsed" in
       ../config/seqindex/seqindex-$(SEQINDEX_INT).sml
    end end
@@ -127,27 +112,29 @@ in
    ../general/bool.sig
    ../general/bool.sml
    ../integer/integer.sig
-   ../integer/int.sml
+   ann "allowFFI true" in
+      ../integer/int.sml
+   end
    ../integer/word.sig
    ../integer/word.sml
-   local 
-      ../config/bind/int-top.sml 
+   local
+      ../config/bind/int-top.sml
       ../config/bind/pointer-prim.sml
-      ../config/bind/real-prim.sml 
-      ../config/bind/word-top.sml 
+      ../config/bind/real-prim.sml
+      ../config/bind/word-top.sml
    in ann "forceUsed" in
       ../config/header/header-$(HEADER_WORD).sml
       ../config/objptr/objptr-$(OBJPTR_REP).sml
-      $(LIB_MLTON_DIR)/targets/$(TARGET)/sml/c-types.sml
+      ../config/c/$(TARGET_ARCH)-$(TARGET_OS)/c-types.sml
       ../config/c/position.sml
       ../config/c/sys-word.sml
    end end
    ../integer/int-inf.sig
    ../integer/int-inf.sml
-   local 
-      ../config/bind/int-top.sml 
-      ../config/bind/int-inf-top.sml 
-      ../config/bind/word-top.sml 
+   local
+      ../config/bind/int-top.sml
+      ../config/bind/int-inf-top.sml
+      ../config/bind/word-top.sml
    in ann "forceUsed" in
       ../config/default/default-$(DEFAULT_INT).sml
       ../config/default/default-$(DEFAULT_WORD).sml
@@ -163,15 +150,15 @@ in
    ../integer/embed-word.sml
    ../integer/pack-word.sig
    ../integer/pack-word.sml
-   local 
-      ../config/bind/int-top.sml 
+   local
+      ../config/bind/int-top.sml
       ../config/bind/pointer-prim.sml
-      ../config/bind/real-prim.sml 
-      ../config/bind/word-top.sml 
+      ../config/bind/real-prim.sml
+      ../config/bind/word-top.sml
    in ann "forceUsed" in
       ../config/header/header-$(HEADER_WORD).sml
       ../config/objptr/objptr-$(OBJPTR_REP).sml
-      $(LIB_MLTON_DIR)/targets/$(TARGET)/sml/c-types.sml
+      ../config/c/$(TARGET_ARCH)-$(TARGET_OS)/c-types.sml
       ../config/c/position.sml
       ../config/c/sys-word.sml
    end end
@@ -196,6 +183,33 @@ in
    ../util/CUtil.sig
    ../util/CUtil.sml
 
+   ../real/IEEE-real.sig
+   ../real/IEEE-real.sml
+   ../real/math.sig
+   ../real/real.sig
+   ../real/real.sml
+   local
+      ../config/bind/real-top.sml
+   in ann "forceUsed" in
+      ../config/default/default-$(DEFAULT_REAL).sml
+      ../config/default/large-real.sml
+   end end
+   ../real/real-global.sml
+   ../real/pack-real.sig
+   ../real/pack-real.sml
+   local
+      ../config/bind/int-top.sml
+      ../config/bind/pointer-prim.sml
+      ../config/bind/real-top.sml
+      ../config/bind/word-top.sml
+   in ann "forceUsed" in
+      ../config/header/header-$(HEADER_WORD).sml
+      ../config/objptr/objptr-$(OBJPTR_REP).sml
+      ../config/c/$(TARGET_ARCH)-$(TARGET_OS)/c-types.sml
+      ../config/c/position.sml
+      ../config/c/sys-word.sml
+   end end
+
    ../util/unique-id.sig
    ../util/unique-id.fun
    ../util/cleaner.sig
@@ -210,32 +224,9 @@ in
    ../posix/error.sig
    ../posix/error.sml
 
-   ../real/IEEE-real.sig
-   ../real/IEEE-real.sml
-   ../real/math.sig
-   ../real/real.sig
-   ../real/real.sml
-   local 
-      ../config/bind/real-top.sml 
-   in ann "forceUsed" in
-      ../config/default/default-$(DEFAULT_REAL).sml
-      ../config/default/large-real.sml
-   end end
-   ../real/real-global.sml
-   ../real/pack-real.sig
-   ../real/pack-real.sml
-   local 
-      ../config/bind/int-top.sml 
-      ../config/bind/pointer-prim.sml
-      ../config/bind/real-top.sml 
-      ../config/bind/word-top.sml 
-   in ann "forceUsed" in
-      ../config/header/header-$(HEADER_WORD).sml
-      ../config/objptr/objptr-$(OBJPTR_REP).sml
-      $(LIB_MLTON_DIR)/targets/$(TARGET)/sml/c-types.sml
-      ../config/c/position.sml
-      ../config/c/sys-word.sml
-   end end
+   ann "allowFFI true" in
+      ../pacml/core-cml/ffi.sml
+   end
 
    ../system/time.sig
    ../system/time.sml
@@ -299,6 +290,7 @@ in
    ../mlton/exit.sml
    ../mlton/exn.sig
    ../mlton/exn.sml
+
    ../mlton/thread.sig
    ../mlton/thread.sml
    ../mlton/signal.sig
@@ -352,8 +344,8 @@ in
    ../mlton/itimer.sig
    ../mlton/itimer.sml
    ../mlton/ffi.sig
-   ann 
-      "ffiStr MLtonFFI" 
+   ann
+      "ffiStr MLtonFFI"
    in
       ../mlton/ffi.sml
    end
@@ -366,8 +358,10 @@ in
    (* ../mlton/ptrace.sml *)
    ../mlton/rlimit.sig
    ../mlton/rlimit.sml
+   ../mlton/socket.sig
+   ../mlton/socket.sml
    ../mlton/syslog.sig
-   ../mlton/syslog.sml 
+   ../mlton/syslog.sml
    ../mlton/vector.sig
    ../mlton/weak.sig
    ../mlton/weak.sml
@@ -379,6 +373,78 @@ in
    ../mlton/world.sml
    ../mlton/mono-array.sig
    ../mlton/mono-vector.sig
+
+    local
+        ../pacml/util/critical.sig
+        ../pacml/util/critical.sml
+        ../pacml/util/assert.sig
+        ../pacml/util/assert.sml
+        ../pacml/util/local-assert.fun
+        ../pacml/util/debug.sig
+        ../pacml/util/debug.sml
+        ../pacml/util/local-debug.fun
+        ../pacml/util/fun-queue.sig
+        ../pacml/util/fun-queue.sml
+        ../pacml/util/imp-queue.sig
+        ../pacml/util/imp-queue.sml
+        ../pacml/util/fun-priority-queue.sig
+        ../pacml/util/fun-priority-queue.fun
+
+        ../pacml/core-cml/lock.sig
+		../pacml/core-cml/lock.sml
+		../pacml/core-cml/rep-types.sml
+		ann "allowFFI true" in
+			../pacml/core-cml/parasite-ffi.sml
+		end
+        ../pacml/core-cml/config.sml
+        ../pacml/core-cml/cvar.sig
+        ../pacml/core-cml/cvar.sml
+        ../pacml/core-cml/thread-id.sig
+        ../pacml/core-cml/thread-id.sml
+        ../pacml/core-cml/proto-thread.sig
+        ../pacml/core-cml/proto-thread.sml
+		../pacml/core-cml/scheduler-hooks.sig
+		../pacml/core-cml/scheduler-hooks.sml
+		../pacml/core-cml/scheduler-queue.sig
+		../pacml/core-cml/scheduler-queue.sml
+		../pacml/core-cml/scheduler.sig
+		../pacml/core-cml/scheduler.sml
+		../pacml/core-cml/thread.sig
+		../pacml/core-cml/thread.sml
+		../pacml/core-cml/event.sig
+		../pacml/core-cml/event.sml
+		../pacml/core-cml/channel.sig
+		../pacml/core-cml/channel.sml
+                ../pacml/core-cml/mailbox.sig
+                ../pacml/core-cml/mailbox.sml
+                ../pacml/core-cml/lock.sig
+                ../pacml/core-cml/lock.sml
+		../pacml/core-cml/timeout.sig
+		../pacml/core-cml/timeout.sml
+		../pacml/core-cml/sync-var.sig
+		../pacml/core-cml/sync-var.sml
+                ../pacml/lib/multicast.sig
+		../pacml/lib/multicast.sml
+		../pacml/lib/simple-rpc.sig
+		../pacml/lib/simple-rpc.sml
+		../pacml/core-cml/non-blocking.sig
+		../pacml/core-cml/non-blocking.sml
+        ../pacml/core-cml/mutex-lock.sig
+        ../pacml/core-cml/mutex-lock.sml
+		../pacml/core-cml/main.sig
+		ann "allowFFI true" in
+			../pacml/core-cml/main.sml
+		end
+
+
+		../pacml/core-cml/pacml.sig
+		../pacml/core-cml/pacml.sml
+    in
+        signature MLTON_PACML
+        structure MLtonPacml
+
+    end
+
    ../mlton/mlton.sig
    ../mlton/mlton.sml
 

@@ -1,18 +1,11 @@
-(* Copyright (C) 2011-2014 Matthew Fluet.
- * Copyright (C) 2003-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2003-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
  * See the file MLton-LICENSE for details.
  *)
 
-functor Real (structure W: WORD_EXTRA
-              structure R:
-                 sig
-                    include PRE_REAL
-                    val castToWord: real -> W.word
-                    val castFromWord: W.word -> real
-                 end): REAL_EXTRA =
+functor Real (R: PRE_REAL): REAL_EXTRA =
    struct
       structure MLton = Primitive.MLton
       structure Prim = R
@@ -27,79 +20,16 @@ functor Real (structure W: WORD_EXTRA
 
       local
          open Prim
+         val isBytecode = MLton.Codegen.isBytecode
       in
-         val realSize = Int32.toInt realSize
-         val exponentBias = Int32.toInt exponentBias
-         val precision = Int32.toInt precision
-         val radix = Int32.toInt radix
-      end
-
-      val signBits = Word.one
-      val exponentSignificandBits = Word.- (Word.fromInt realSize, signBits)
-      val significandBits = Word.- (Word.fromInt precision, Word.one)
-      val exponentBits = Word.- (exponentSignificandBits, significandBits)
-
-      local
-         val mkMask : Word.word -> W.word =
-            fn b => W.notb (W.<< (W.notb W.zero, b))
-      in
-         val signMask =
-            W.<< (mkMask signBits, exponentSignificandBits)
-         val exponentMask =
-            W.<< (mkMask exponentBits, significandBits)
-         val significandMask =
-            mkMask significandBits
-      end
-
-      val class : real -> float_class =
-         fn r =>
-         let
-            val w = R.castToWord r
-         in
-            if W.andb (w, exponentMask) = exponentMask
-               then if W.andb (w, significandMask) = W.zero
-                       then IEEEReal.INF
-                    else IEEEReal.NAN
-            else if W.andb (w, exponentMask) = W.zero
-               then if W.andb (w, significandMask) = W.zero
-                       then IEEEReal.ZERO
-                    else IEEEReal.SUBNORMAL
-            else IEEEReal.NORMAL
-         end
-
-      val toBits : real -> {sign: bool, exponent: W.word, significand: W.word} =
-         fn r =>
-         let
-            val w = R.castToWord r
-            val significand =
-               W.andb (w, significandMask)
-            val exponent =
-               W.>> (W.andb (w, exponentMask), significandBits)
-            val sign =
-               W.andb (w, signMask) = signMask
-         in
-            {sign = sign,
-             exponent = exponent,
-             significand = significand}
-         end
-
-      val fromBits : {sign: bool, exponent: W.word, significand: W.word} -> real =
-         fn {sign, exponent, significand} =>
-         let
-            val w =
-               W.orb (if sign then W.<< (W.one, exponentSignificandBits) else W.zero,
-                      W.orb (W.andb (W.<< (exponent, significandBits), exponentMask),
-                             W.andb (significand, significandMask)))
-            val r = R.castFromWord w
-         in
-            r
-         end
-
-      local
-         open Prim
-      in
-         val op *+ = op *+
-         val op *- = op *-
+         val *+ =
+            if isBytecode
+               then fn (r1, r2, r3) => r1 * r2 + r3
+            else *+
+         val *- =
+            if isBytecode
+               then fn (r1, r2, r3) => r1 * r2 - r3
+            else *-
          val op * = op *
          val op + = op +
          val op - = op -
@@ -110,6 +40,16 @@ functor Real (structure W: WORD_EXTRA
          val op >= = op >=
          val ~ = ~
          val abs = abs
+
+         val maxFinite = maxFinite
+         val minNormalPos = minNormalPos
+         val minPos = minPos
+
+         val realSize = Int32.toInt realSize
+         val precision = Int32.toInt precision
+         val radix = Int32.toInt radix
+
+         val signBit = fn r => signBit r <> 0
       end
 
       local
@@ -151,22 +91,29 @@ functor Real (structure W: WORD_EXTRA
          val fromLarge = S.f
       end
 
-      val negInf = R.castFromWord (W.orb (signMask, exponentMask))
-      val negOne = R.castFromWord (W.orb (signMask, W.<< (W.fromInt exponentBias, significandBits)))
-      val negZero = R.castFromWord signMask
-      val zero = R.castFromWord W.zero
-      val minPos = R.castFromWord W.one
-      val minNormalPos = R.castFromWord (W.<< (W.one, significandBits))
-      val half = R.castFromWord (W.<< (W.- (W.fromInt exponentBias, W.one), significandBits))
-      val one = R.castFromWord (W.<< (W.fromInt exponentBias, significandBits))
-      val two = R.castFromWord (W.<< (W.+ (W.fromInt exponentBias, W.one), significandBits))
-      val maxFinite = R.castFromWord (W.- (exponentMask, W.one))
-      val posInf = R.castFromWord exponentMask
+      val zero = R.fromInt32Unsafe 0
+      val one = R.fromInt32Unsafe 1
+      val two = R.fromInt32Unsafe 2
+
+      val half = one / two
+      val negOne = ~ one
+
+      val posInf = one / zero
+      val negInf = ~one / zero
 
       val nan = posInf + negInf
-      val posNan = R.castFromWord (W.andb (R.castToWord nan, W.notb signMask))
-      val negNan = R.castFromWord (W.orb (R.castToWord nan, signMask))
 
+      val class = IEEEReal.mkClass R.class
+
+      val abs =
+         if MLton.Codegen.isX86 orelse MLton.Codegen.isAmd64
+            then abs
+         else
+            fn x =>
+            case class x of
+               INF => posInf
+             | NAN => x
+             | _ => if signBit x then ~x else x
 
       fun isFinite r =
          abs r <= maxFinite
@@ -180,7 +127,7 @@ functor Real (structure W: WORD_EXTRA
       fun isNormal r = class r = NORMAL
 
       val op ?= =
-         if MLton.Codegen.isAMD64 orelse MLton.Codegen.isLLVM orelse MLton.Codegen.isX86
+         if MLton.Codegen.isX86 orelse MLton.Codegen.isAmd64
             then R.?=
          else
             fn (x, y) =>
@@ -208,8 +155,6 @@ functor Real (structure W: WORD_EXTRA
          else if x == zero then 0
          else raise Domain
 
-      val signBit = #sign o toBits
-
       fun sameSign (x, y) = signBit x = signBit y
 
       fun copySign (x, y) =
@@ -218,13 +163,13 @@ functor Real (structure W: WORD_EXTRA
          else ~ x
 
       local
-         structure I = IEEEReal
+         datatype z = datatype IEEEReal.real_order
       in
          fun compareReal (x, y) =
-            if x < y then I.LESS
-            else if x > y then I.GREATER
-            else if x == y then I.EQUAL
-            else I.UNORDERED
+            if x < y then LESS
+            else if x > y then GREATER
+            else if x == y then EQUAL
+            else UNORDERED
       end
 
       local
@@ -241,14 +186,6 @@ functor Real (structure W: WORD_EXTRA
 
       fun unordered (x, y) = isNan x orelse isNan y
 
-      (* nextAfter for subnormal and normal values works by converting
-       * the real to a word of equivalent size and doing an increment
-       * or decrement on the word.  Because of the way IEEE floating
-       * point numbers are represented, word {de,in}crement
-       * automatically does the right thing at the boundary between
-       * normals and denormals.  Also, convienently,
-       * maxFinite+1 = posInf and minFinite-1 = negInf.
-       *)
       val nextAfter: real * real -> real =
          fn (r, t) =>
          case (class r, class t) of
@@ -261,9 +198,9 @@ functor Real (structure W: WORD_EXTRA
                if r == t then
                   r
                else if (r > t) = (r > zero) then
-                  R.castFromWord (W.- (R.castToWord r, W.one))
+                  R.nextAfterDown r
                else
-                  R.castFromWord (W.+ (R.castToWord r, W.one))
+                  R.nextAfterUp r
 
       local
          val one = One.make (fn () => ref (0 : C_Int.t))
@@ -330,14 +267,22 @@ functor Real (structure W: WORD_EXTRA
          else if isNan x then raise Div
          else raise Overflow
 
-      val realCeil = R.realCeil
-      val realFloor = R.realFloor
-      val realTrunc = R.realTrunc
-      
-      (* Unfortunately, libc round ties to zero instead of even values. *)
-      (* Fortunately, if any rounding mode is supported, it's TO_NEAREST. *)
-      val realRound = fn r => IEEEReal.withRoundingMode (TO_NEAREST, fn () => R.round r)
-      
+      fun roundReal (x: real, m: rounding_mode): real =
+         IEEEReal.withRoundingMode (m, fn () => R.round x)
+
+      local
+         fun round mode x =
+            case class x of
+               INF => x
+             | NAN => x
+             | _ => roundReal (x, mode)
+      in
+         val realCeil = round TO_POSINF
+         val realFloor = round TO_NEGINF
+         val realRound = round TO_NEAREST
+         val realTrunc = round TO_ZERO
+      end
+
       fun rem (x, y) =
          (case class x of
              INF => nan
@@ -350,8 +295,8 @@ functor Real (structure W: WORD_EXTRA
                     | _ => x - realTrunc (x/y) * y))
 
       (* fromDecimal, scan, fromString: decimal -> binary conversions *)
-      fun strtor (str: NullString.t,
-                  rounding_mode: IEEEReal.rounding_mode) =
+      fun strto (str: NullString.t,
+                 rounding_mode: IEEEReal.rounding_mode) =
          let
             val rounding : C_Int.int =
                case rounding_mode of
@@ -360,7 +305,7 @@ functor Real (structure W: WORD_EXTRA
                 | TO_POSINF => 2
                 | TO_ZERO => 0
          in
-            Prim.strtor (str, rounding)
+            Prim.strto (str, rounding)
          end
       exception Bad
       fun fromDecimalWithRoundingMode
@@ -399,17 +344,17 @@ functor Real (structure W: WORD_EXTRA
                   val i = CharVector.foldl (fn (c, i) => upd (i, c)) i exp
                   val _ = upd (i, #"\000")
                   val str = Vector.unsafeFromArray a
-                  val x = strtor (NullString.fromString str, rounding_mode)
+                  val x = strto (NullString.fromString str, rounding_mode)
                in
                   x
                end
          in
             SOME (case class of
                      INF => if sign then negInf else posInf
-                   | NAN => if sign then negNan else posNan
+                   | NAN => nan
                    | NORMAL => doit ()
                    | SUBNORMAL => doit ()
-                   | ZERO => if sign then negZero else zero)
+                   | ZERO => if sign then ~ zero else zero)
             handle Bad => NONE
          end
 
@@ -461,7 +406,7 @@ functor Real (structure W: WORD_EXTRA
           | NAN => {class = NAN,
                     digits = [],
                     exp = 0,
-                    sign = signBit x}
+                    sign = false}
           | ZERO => {class = ZERO,
                      digits = [],
                      exp = 0,
@@ -564,45 +509,49 @@ functor Real (structure W: WORD_EXTRA
                concat [sign, whole, frac, "E", exp]
             end
          fun gen (x: real, n: int): string =
-            let
-               val (prefix, x) =
-                  if x < zero
-                     then ("~", ~ x)
-                  else ("", x)
-               val ss = Substring.full (sci (x, Int.- (n, 1)))
-               fun isE c = c = #"E"
-               fun isZero c = c = #"0"
-               val expS =
-                  Substring.string (Substring.taker (not o isE) ss)
-               val exp = valOf (Int.fromString expS)
-               val man =
-                  String.translate
-                  (fn #"." => "" | c => str c)
-                  (Substring.string (Substring.dropr isZero
-                                     (Substring.takel (not o isE) ss)))
-               val manSize = String.size man
-               fun zeros i = CharVector.tabulate (i, fn _ => #"0")
-               fun dotAt i =
-                  concat [String.substring (man, 0, i),
-                          ".", String.extract (man, i, NONE)]
-               fun sci () = concat [prefix,
-                                    if manSize = 1 then man else dotAt 1,
-                                    "E", expS]
-               val op - = Int.-
-               val op + = Int.+
-               val ~ = Int.~
-               val op >= = Int.>=
-            in
-               if exp >= (if manSize = 1 then 3 else manSize + 3)
-                  then sci ()
-               else if exp >= manSize - 1
-                  then concat [prefix, man, zeros (exp - (manSize - 1))]
-               else if exp >= 0
-                  then concat [prefix, dotAt (exp + 1)]
-               else if exp >= (if manSize = 1 then ~2 else ~3)
-                  then concat [prefix, "0.", zeros (~exp - 1), man]
-               else sci ()
-            end
+            case class x of
+               INF => if x > zero then "inf" else "~inf"
+             | NAN => "nan"
+             | _ =>
+                  let
+                     val (prefix, x) =
+                        if x < zero
+                           then ("~", ~ x)
+                        else ("", x)
+                     val ss = Substring.full (sci (x, Int.- (n, 1)))
+                     fun isE c = c = #"E"
+                     fun isZero c = c = #"0"
+                     val expS =
+                        Substring.string (Substring.taker (not o isE) ss)
+                     val exp = valOf (Int.fromString expS)
+                     val man =
+                        String.translate
+                        (fn #"." => "" | c => str c)
+                        (Substring.string (Substring.dropr isZero
+                                           (Substring.takel (not o isE) ss)))
+                     val manSize = String.size man
+                     fun zeros i = CharVector.tabulate (i, fn _ => #"0")
+                     fun dotAt i =
+                        concat [String.substring (man, 0, i),
+                                ".", String.extract (man, i, NONE)]
+                     fun sci () = concat [prefix,
+                                          if manSize = 1 then man else dotAt 1,
+                                          "E", expS]
+                     val op - = Int.-
+                     val op + = Int.+
+                     val ~ = Int.~
+                     val op >= = Int.>=
+                  in
+                     if exp >= (if manSize = 1 then 3 else manSize + 3)
+                        then sci ()
+                     else if exp >= manSize - 1
+                        then concat [prefix, man, zeros (exp - (manSize - 1))]
+                     else if exp >= 0
+                        then concat [prefix, dotAt (exp + 1)]
+                     else if exp >= (if manSize = 1 then ~2 else ~3)
+                        then concat [prefix, "0.", zeros (~exp - 1), man]
+                     else sci ()
+                  end
       in
          fun fmt spec =
             let
@@ -655,43 +604,36 @@ functor Real (structure W: WORD_EXTRA
             in
                fn x =>
                case class x of
-                  NAN => (* if signBit x then "~nan" else *) "nan"
+                  NAN => "nan"
                 | INF => if x > zero then "inf" else "~inf"
                 | _ => doit x
             end
       end
 
       val toString = fmt (StringCvt.GEN NONE)
-      
-      (* Not all devices support all rounding modes. 
-       * However, every device has ceil/floor/round/trunc.
-       *)
-      fun safeConvert (m, cvt, x) =
-         case m of
-            TO_POSINF => cvt (realCeil x)
-          | TO_NEGINF => cvt (realFloor x)
-          | TO_NEAREST => cvt (realRound x)
-          | TO_ZERO => cvt (realTrunc x)
 
       local
          fun 'a make {fromIntUnsafe: 'a -> real,
                       toIntUnsafe: real -> 'a,
-                      other : {maxInt': Word.word -> 'a,
+                      other : {maxInt': 'a,
                                minInt': 'a,
                                precision': int}} =
             (fromIntUnsafe,
              if Int.< (precision, #precision' other) then
                 let
-                   val trim = Int.- (Int.- (#precision' other, precision), 1)
-                   val maxInt' = (#maxInt' other) (Word.fromInt trim)
+                   val maxInt' = #maxInt' other
                    val minInt' = #minInt' other
-                   val maxInt = fromIntUnsafe maxInt'
-                   val minInt = fromIntUnsafe minInt'
+                   (* maxInt can't be represented exactly. *)
+                   (* minInt can be represented exactly. *)
+                   val (maxInt,minInt) =
+                       IEEEReal.withRoundingMode
+                       (TO_ZERO, fn () => (fromIntUnsafe maxInt',
+                                           fromIntUnsafe minInt'))
                 in
                    fn (m: rounding_mode) => fn x =>
                    if minInt <= x then
                       if x <= maxInt then
-                         safeConvert (m, toIntUnsafe, x)
+                         toIntUnsafe (roundReal (x, m))
                       else
                          raise Overflow
                    else
@@ -702,7 +644,7 @@ functor Real (structure W: WORD_EXTRA
                 end
              else
                 let
-                   val maxInt' = (#maxInt' other) 0w0
+                   val maxInt' = #maxInt' other
                    val minInt' = #minInt' other
                    val maxInt = fromIntUnsafe maxInt'
                    val minInt = fromIntUnsafe minInt'
@@ -710,7 +652,7 @@ functor Real (structure W: WORD_EXTRA
                    fn (m: rounding_mode) => fn x =>
                    if minInt <= x then
                       if x <= maxInt then
-                         safeConvert (m, toIntUnsafe, x)
+                         toIntUnsafe (roundReal (x, m))
                       else
                          if x < maxInt + one then
                             (case m of
@@ -747,25 +689,25 @@ functor Real (structure W: WORD_EXTRA
          val (fromInt8,toInt8) =
             make {fromIntUnsafe = R.fromInt8Unsafe,
                   toIntUnsafe = R.toInt8Unsafe,
-                  other = {maxInt' = fn w => Int8.<< (Int8.>> (Int8.maxInt', w), w),
+                  other = {maxInt' = Int8.maxInt',
                            minInt' = Int8.minInt',
                            precision' = Int8.precision'}}
          val (fromInt16,toInt16) =
             make {fromIntUnsafe = R.fromInt16Unsafe,
                   toIntUnsafe = R.toInt16Unsafe,
-                  other = {maxInt' = fn w => Int16.<< (Int16.>> (Int16.maxInt', w), w),
+                  other = {maxInt' = Int16.maxInt',
                            minInt' = Int16.minInt',
                            precision' = Int16.precision'}}
          val (fromInt32,toInt32) =
             make {fromIntUnsafe = R.fromInt32Unsafe,
                   toIntUnsafe = R.toInt32Unsafe,
-                  other = {maxInt' = fn w => Int32.<< (Int32.>> (Int32.maxInt', w), w),
+                  other = {maxInt' = Int32.maxInt',
                            minInt' = Int32.minInt',
                            precision' = Int32.precision'}}
          val (fromInt64,toInt64) =
             make {fromIntUnsafe = R.fromInt64Unsafe,
                   toIntUnsafe = R.toInt64Unsafe,
-                  other = {maxInt' = fn w => Int64.<< (Int64.>> (Int64.maxInt', w), w),
+                  other = {maxInt' = Int64.maxInt',
                            minInt' = Int64.minInt',
                            precision' = Int64.precision'}}
       end
@@ -777,8 +719,8 @@ functor Real (structure W: WORD_EXTRA
                if IntInf.< (i, 0)
                   then "-" ^ (IntInf.toString (IntInf.~ i))
                else IntInf.toString i
-            val x = strtor (NullString.nullTerm str,
-                            IEEEReal.getRoundingMode ())
+            val x = strto (NullString.nullTerm str,
+                           IEEEReal.getRoundingMode ())
          in
             x
          end
@@ -788,22 +730,18 @@ functor Real (structure W: WORD_EXTRA
          case class x of
             INF => raise Overflow
           | NAN => raise Domain
-          | ZERO => (0 : LargeInt.int)
+          | ZERO => 0
           | _ =>
                let
                   (* This round may turn x into an INF, so we need to check the
                    * class again.
                    *)
-                  val x = 
-                     case mode of
-                        TO_POSINF => realCeil x
-                      | TO_NEGINF => realFloor x
-                      | TO_NEAREST => realRound x
-                      | TO_ZERO => realTrunc x
+                  val x = roundReal (x, mode)
                in
                   case class x of
                      INF => raise Overflow
-                   | _ => valOf (IntInf.fromString (fmt (StringCvt.FIX (SOME 0)) x))
+                   | _ =>
+                        valOf (IntInf.fromString (fmt (StringCvt.FIX (SOME 0)) x))
                end
 
       local
@@ -863,15 +801,17 @@ functor Real (structure W: WORD_EXTRA
       local
          fun 'a make {fromWordUnsafe: 'a -> real,
                       toWordUnsafe: real -> 'a,
-                      other : {maxWord': Word.word -> 'a,
+                      other : {maxWord': 'a,
                                wordSize: int,
                                zeroWord: 'a}} =
             (fromWordUnsafe,
              if Int.<= (precision, #wordSize other)
                 then let
-                        val trim = Int.- (#wordSize other, precision)
-                        val maxWord' = (#maxWord' other) (Word.fromInt trim)
-                        val maxWord = fromWordUnsafe maxWord'
+                        val maxWord' = #maxWord' other
+                        (* maxWord can't be represented exactly. *)
+                        val maxWord =
+                           IEEEReal.withRoundingMode
+                           (TO_ZERO, fn () => fromWordUnsafe maxWord')
                         val zeroWord = #zeroWord other
                      in
                         fn (m: rounding_mode) => fn x =>
@@ -880,7 +820,7 @@ functor Real (structure W: WORD_EXTRA
                          | NAN => raise Domain
                          | _ => if zero <= x
                                    then if x <= maxWord
-                                           then safeConvert (m, toWordUnsafe, x)
+                                           then toWordUnsafe (roundReal (x, m))
                                         else raise Overflow
                                 else if x > ~one
                                    then (case m of
@@ -894,7 +834,7 @@ functor Real (structure W: WORD_EXTRA
                                 else raise Overflow
                      end
              else let
-                     val maxWord' = (#maxWord' other) 0w0
+                     val maxWord' = #maxWord' other
                      val maxWord = fromWordUnsafe maxWord'
                      val zeroWord = #zeroWord other
                   in
@@ -904,7 +844,7 @@ functor Real (structure W: WORD_EXTRA
                       | NAN => raise Domain
                       | _ => if zero <= x
                                 then if x <= maxWord
-                                        then safeConvert (m, toWordUnsafe, x)
+                                        then toWordUnsafe (roundReal (x, m))
                              else if x < maxWord + one
                                 then (case m of
                                          TO_NEGINF => maxWord'
@@ -931,25 +871,25 @@ functor Real (structure W: WORD_EXTRA
          val (fromWord8,toWord8) =
             make {fromWordUnsafe = R.fromWord8Unsafe,
                   toWordUnsafe = R.toWord8Unsafe,
-                  other = {maxWord' = fn w => Word8.<< (Word8.>> (Word8.maxWord', w), w),
+                  other = {maxWord' = Word8.maxWord',
                            wordSize = Word8.wordSize,
                            zeroWord = Word8.zero}}
          val (fromWord16,toWord16) =
             make {fromWordUnsafe = R.fromWord16Unsafe,
                   toWordUnsafe = R.toWord16Unsafe,
-                  other = {maxWord' = fn w => Word16.<< (Word16.>> (Word16.maxWord', w), w),
+                  other = {maxWord' = Word16.maxWord',
                            wordSize = Word16.wordSize,
                            zeroWord = Word16.zero}}
          val (fromWord32,toWord32) =
             make {fromWordUnsafe = R.fromWord32Unsafe,
                   toWordUnsafe = R.toWord32Unsafe,
-                  other = {maxWord' = fn w => Word32.<< (Word32.>> (Word32.maxWord', w), w),
+                  other = {maxWord' = Word32.maxWord',
                            wordSize = Word32.wordSize,
                            zeroWord = Word32.zero}}
          val (fromWord64,toWord64) =
             make {fromWordUnsafe = R.fromWord64Unsafe,
                   toWordUnsafe = R.toWord64Unsafe,
-                  other = {maxWord' = fn w => Word64.<< (Word64.>> (Word64.maxWord', w), w),
+                  other = {maxWord' = Word64.maxWord',
                            wordSize = Word64.wordSize,
                            zeroWord = Word64.zero}}
       end
@@ -1071,7 +1011,7 @@ functor Real (structure W: WORD_EXTRA
                             if isNeg x
                                then if isNeg y
                                        then if isOddInt y
-                                               then negZero
+                                               then ~ zero
                                             else zero
                                     else if isOddInt y
                                             then negInf
@@ -1116,21 +1056,28 @@ functor Real (structure W: WORD_EXTRA
          end
    end
 
-structure Real32 = Real (structure W = Word32
-                         structure R =
-                            struct
-                               open Primitive.Real32
-                               local open Primitive.PackReal32 in
-                                  val castToWord = castToWord
-                                  val castFromWord = castFromWord
-                               end
-                            end)
-structure Real64 = Real (structure W = Word64
-                         structure R =
-                            struct
-                               open Primitive.Real64
-                               local open Primitive.PackReal64 in
-                                  val castToWord = castToWord
-                                  val castFromWord = castFromWord
-                               end
-                            end)
+(* All of the Real{32,64}.nextAfter{Down,Up} functions work by
+ * converting the real to a word of equivalent size and doing an
+ * increment or decrement on the word.  This works because the SML
+ * Basis Library code that calls these functions handles all the
+ * special cases (nans and infs).  Also, because of the way IEEE
+ * floating point numbers are represented, word {de,in}crement
+ * automatically does the right thing at the boundary between normals
+ * and denormals.  Also, convienently, maxFinite+1 = posInf and
+ * minFinite-1 = negInf.
+ *)
+
+structure Real32 = Real (open Primitive.Real32
+                         local open Primitive.PackReal32 in
+                            fun nextAfterDown r =
+                               castFromWord (Word32.- (castToWord r, 0wx1))
+                            fun nextAfterUp r =
+                               castFromWord (Word32.+ (castToWord r, 0wx1))
+                         end)
+structure Real64 = Real (open Primitive.Real64
+                         local open Primitive.PackReal64 in
+                            fun nextAfterDown r =
+                               castFromWord (Word64.- (castToWord r, 0wx1))
+                            fun nextAfterUp r =
+                               castFromWord (Word64.+ (castToWord r, 0wx1))
+                         end)

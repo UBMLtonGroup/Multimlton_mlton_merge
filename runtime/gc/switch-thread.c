@@ -11,9 +11,9 @@ void switchToThread (GC_state s, objptr op) {
     GC_thread thread;
     GC_stack stack;
 
-    thread = (GC_thread)(objptrToPointer (op, s->heap.start)
+    thread = (GC_thread)(objptrToPointer (op, s->heap->start)
                          + offsetofThread (s));
-    stack = (GC_stack)(objptrToPointer (thread->stack, s->heap.start));
+    stack = (GC_stack)(objptrToPointer (thread->stack, s->heap->start));
 
     fprintf (stderr, "switchToThread ("FMTOBJPTR")  used = %"PRIuMAX
              "  reserved = %"PRIuMAX"\n",
@@ -24,32 +24,46 @@ void switchToThread (GC_state s, objptr op) {
 }
 
 void GC_switchToThread (GC_state s, pointer p, size_t ensureBytesFree) {
-  if (DEBUG_THREADS)
-    fprintf (stderr, "GC_switchToThread ("FMTPTR", %"PRIuMAX")\n",
-             (uintptr_t)p, (uintmax_t)ensureBytesFree);
-  if (FALSE) {
+  if (DEBUG_THREADS or s->controls->messages)
+    fprintf (stderr, "GC_switchToThread ("FMTPTR", %zu) [%d]\n",
+             (uintptr_t)p, ensureBytesFree, Proc_processorNumber (s));
+  if (TRUE) {
     /* This branch is slower than the else branch, especially
      * when debugging is turned on, because it does an invariant
      * check on every thread switch.
      * So, we'll stick with the else branch for now.
      */
-    enter (s);
+    //ENTER1 (s, p);
+    /* XXX copied from enter() */
+    /* used needs to be set because the mutator has changed s->stackTop. */
+    getStackCurrent(s)->used = sizeofGCStateCurrentStackUsed (s);
+    getThreadCurrent(s)->exnStack = s->exnStack;
+    beginAtomic (s);
+
     getThreadCurrent(s)->bytesNeeded = ensureBytesFree;
-    switchToThread (s, pointerToObjptr(p, s->heap.start));
+    switchToThread (s, pointerToObjptr(p, s->heap->start));
     s->atomicState--;
-    switchToSignalHandlerThreadIfNonAtomicAndSignalPending (s);
-    ensureInvariantForMutator (s, FALSE);
+    /* XX spoons don't bother to check the signal handler here since we
+       (probably) aren't bothering to synchronize.  we'll get it on the next
+       failed allocation request. */
+    //switchToSignalHandlerThreadIfNonAtomicAndSignalPending (s);
+    ensureHasHeapBytesFreeAndOrInvariantForMutator (s, FALSE,
+                                                    TRUE, TRUE,
+                                                    0, 0, FALSE, FALSE);
+
+    endAtomic (s);
     assert (invariantForMutatorFrontier(s));
     assert (invariantForMutatorStack(s));
-    leave (s);
+    //LEAVE0 (s);
   } else {
+    assert (false and "unsafe in a multiprocessor context");
     /* BEGIN: enter(s); */
     getStackCurrent(s)->used = sizeofGCStateCurrentStackUsed (s);
     getThreadCurrent(s)->exnStack = s->exnStack;
     beginAtomic (s);
     /* END: enter(s); */
     getThreadCurrent(s)->bytesNeeded = ensureBytesFree;
-    switchToThread (s, pointerToObjptr(p, s->heap.start));
+    switchToThread (s, pointerToObjptr(p, s->heap->start));
     s->atomicState--;
     switchToSignalHandlerThreadIfNonAtomicAndSignalPending (s);
     /* BEGIN: ensureInvariantForMutator */
@@ -62,7 +76,9 @@ void GC_switchToThread (GC_state s, pointer p, size_t ensureBytesFree) {
     /* BEGIN: leave(s); */
     endAtomic (s);
     /* END: leave(s); */
-  }
   assert (invariantForMutatorFrontier(s));
   assert (invariantForMutatorStack(s));
+  }
 }
+
+

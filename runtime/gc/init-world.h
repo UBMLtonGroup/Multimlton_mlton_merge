@@ -9,7 +9,7 @@
 #if (defined (MLTON_GC_INTERNAL_TYPES))
 
 /* GC_init uses the array of struct intInfInits in s at program start
- * to allocate intInfs.  
+ * to allocate intInfs.
  * The globalIndex'th entry of the globals array in s is set to the
  * IntInf.int whose value corresponds to the mlstr string.
  *
@@ -41,5 +41,6 @@ static inline size_t sizeofInitialBytesLive (GC_state s);
 static void initIntInfs (GC_state s);
 static void initVectors (GC_state s);
 static void initWorld (GC_state s);
+static void duplicateWorld (GC_state d, GC_state s);
 
 #endif /* (defined (MLTON_GC_INTERNAL_FUNCS)) */

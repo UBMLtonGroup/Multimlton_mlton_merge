@@ -6,7 +6,7 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor LocalFlatten (S: SSA_TRANSFORM_STRUCTS): SSA_TRANSFORM = 
+functor LocalFlatten (S: LOCAL_FLATTEN_STRUCTS): LOCAL_FLATTEN = 
 struct
 
 open S
@@ -71,7 +71,7 @@ structure VarInfo =
        | Tuple
    end
 
-fun transform (Program.T {globals, datatypes, functions, main}) =
+fun flatten (Program.T {globals, datatypes, functions, main}) =
    let
       val {get = varInfo: Var.t -> VarInfo.t,
            set = setVarInfo, ...} =

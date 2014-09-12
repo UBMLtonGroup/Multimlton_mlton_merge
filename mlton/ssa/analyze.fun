@@ -1,5 +1,4 @@
-(* Copyright (C) 2011 Matthew Fluet.
- * Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -127,34 +126,23 @@ fun 'a analyze
 
                end
           | Case {test, cases, default, ...} =>
-               let
-                  val test = value test
+               let val test = value test
                   fun ensureNullary j =
                      if 0 = Vector.length (labelValues j)
                         then ()
                      else Error.bug (concat ["Analyze.loopTransfer: Case:",
                                              Label.toString j,
                                              " must be nullary"])
-                  fun ensureSize (w, s) =
-                     if WordSize.equals (s, WordX.size w)
-                        then ()
-                     else Error.bug (concat ["Analyze.loopTransfer: Case:",
-                                             WordX.toString w,
-                                             " must be size ",
-                                             WordSize.toString s])
-                  fun doitWord (s, cs) =
-                     (ignore (filterWord (test, s))
-                      ; Vector.foreach (cs, fn (w, j) =>
-                                        (ensureSize (w, s)
-                                         ; ensureNullary j)))
-                  fun doitCon cs =
-                     Vector.foreach (cs, fn (c, j) =>
-                                     filter (test, c, labelValues j))
+                  fun doit (s, cs, filter: 'a * 'b -> unit) =
+                     (filter (test, s)
+                      ; Vector.foreach (cs, fn (_, j) => ensureNullary j))
                   datatype z = datatype Cases.t
                   val _ =
                      case cases of
-                        Con cs => doitCon cs
-                      | Word (s, cs) => doitWord (s, cs)
+                        Con cases =>
+                           Vector.foreach (cases, fn (c, j) =>
+                                           filter (test, c, labelValues j))
+                      | Word (s, cs) => doit (s, cs, filterWord)
                   val _ = Option.app (default, ensureNullary)
                in ()
                end

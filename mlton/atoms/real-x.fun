@@ -1,5 +1,4 @@
-(* Copyright (C) 2009,2011-2012 Matthew Fluet.
- * Copyright (C) 2004-2006 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2004-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -10,11 +9,6 @@ functor RealX (S: REAL_X_STRUCTS): REAL_X =
 struct
 
 open S
-
-structure P = Pervasive
-structure PR32 = P.Real32
-structure PR64 = P.Real64
-structure PIR = P.IEEEReal
 
 datatype z = datatype RealSize.t
 
@@ -47,17 +41,9 @@ fun make (r: string, s: RealSize.t): t option =
        | R64 => doit (Real64.fromString, Real64.isFinite, Real64)
    end
 
-(* RealX.equals determines if two floating-point constants are equal.
- * Must check the sign bit, since Real{32,64}.== ignores the sign of
- * zeros; the difference between 0.0 and ~0.0 is observable by
- * programs that examine the sign bit.
- * Should check for nan, since Real{32,64}.== returns false for any
- * comparison with nan values.  Ideally, should use bit-wise equality
- * since there are multiple representations for nan.  However, SML/NJ
- * doesn't support the PackReal structures that would be required to
- * compare real values as bit patterns.  Conservatively return
- * 'false'; constant-propagation and common-subexpression elimination
- * will not combine nan values.
+(* We need to check the sign bit when comparing reals so that we don't treat
+ * 0.0 and ~0.0 identically.  The difference between the two is detectable by
+ * user programs that look at the sign bit.
  *)
 fun equals (r, r') =
    case (r, r') of
@@ -84,6 +70,11 @@ val layout = Layout.str o toString
 
 val hash = String.hash o toString
 
+structure P = Pervasive
+structure PR32 = P.Real32
+structure PR64 = P.Real64
+structure PIR = P.IEEEReal
+
 (* Disable constant folding when it might change the results. *)
 fun disableCF () =
    PR32.precision = PR64.precision
@@ -104,7 +95,7 @@ end
 datatype 'r r =
    R of {zero: 'r, half: 'r, one: 'r, inf: 'r, abs: 'r -> 'r,
          signBit: 'r -> bool, isNan: 'r -> bool,
-         toManExp: 'r -> {exp: int, man: 'r},
+         toManExp: 'r -> {exp: Int32.int, man: 'r},
          compareReal: 'r * 'r -> PIR.real_order,
          bits: Bits.t,
          subVec: P.Word8Vector.vector * int -> P.LargeWord.word,
@@ -135,33 +126,31 @@ val r64 =
        tag = Real64}
 
 local
-   fun doit (R {compareReal, signBit, tag, ...}) (f, arg) =
+   fun doit (R {compareReal, signBit, isNan, tag, ...}) (f, arg) =
        if disableCF ()
           then NONE
        else
           let
              val old = PIR.getRoundingMode ()
-          in
-             (* According to the Basis Library specification,
-              * setRoundingMode can fail (raise an exception).
+             (* According to the Basis library spec, setRoundingMode could
+              * fail (raise an exception), but the current implementation
+              * in MLton does not seem to do so.  This code may need to be
+              * revisited if the behavior of setRoundingMode changes in
+              * MLton.  The idea here is simply to evaluate the operation
+              * in all (relevant) rounding modes to ensure that the result
+              * is the same regardless of rounding mode.
               *)
-             let
-                val () = PIR.setRoundingMode PIR.TO_NEGINF
-                val min = f arg
-                val () = PIR.setRoundingMode PIR.TO_POSINF
-                val max = f arg
-                val () = PIR.setRoundingMode old
-             in
-                if (PIR.EQUAL = compareReal (min, max)
-                    andalso signBit min = signBit max)
-                   then SOME (tag min)
-                else NONE
-             end
-             handle _ =>
-                (if PIR.getRoundingMode () = old
-                    then ()
-                 else PIR.setRoundingMode old
-                 ; NONE)
+             val () = PIR.setRoundingMode PIR.TO_NEGINF
+             val min = f arg
+             val () = PIR.setRoundingMode PIR.TO_POSINF
+             val max = f arg
+             val () = PIR.setRoundingMode old
+          in
+             if PIR.EQUAL = compareReal (min, max)
+                andalso signBit min = signBit max
+                orelse isNan min andalso isNan max
+                then SOME (tag min)
+             else NONE
           end
 
    fun make1 (o32, o64) =
@@ -262,32 +251,27 @@ in
 end
 
 local
-   fun doit (R {bits, toBytes, subVec, ...}) x = let
-   in
-       (SOME o WordX.fromIntInf)
+   fun doit (R {bits, toBytes, subVec, ...}) x =
+       WordX.fromIntInf
           (P.LargeWord.toLargeInt (subVec (toBytes x, 0)),
            WordX.WordSize.fromBits bits)
-   end handle _ => NONE
 in
    fun castToWord x =
        if disableCF ()
           then NONE
        else
-          (case x of
-              Real32 x => doit r32 x
-            | Real64 x => doit r64 x)
+          SOME (case x of
+                   Real32 x => doit r32 x
+                 | Real64 x => doit r64 x)
 end
 
 local
-   fun doit (R {bits, update, subArr, tag, isNan, ...}) w = let
+   fun doit (R {bits, update, subArr, tag, ...}) w = let
       val a = P.Word8Array.array (Bytes.toInt (Bits.toBytes bits), 0w0)
-      val () = update (a, 0, P.LargeWord.fromLargeInt (WordX.toIntInf w))
-      val r = subArr (a, 0)
    in
-      if isNan r
-         then NONE
-      else SOME (tag r)
-   end handle _ => NONE
+      update (a, 0, P.LargeWord.fromLargeInt (WordX.toIntInf w))
+    ; SOME (tag (subArr (a, 0)))
+   end
 in
    fun castFromWord w =
       if disableCF () then

@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2006, 2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006, 2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -64,14 +63,14 @@ fun stats' (T {buckets, numItems, ...}) =
        val (min,max,total)
          = Array.fold
            (!buckets,
-            (NONE, NONE, 0.0),
-            fn (l,(min,max,total)) 
+            (Int.maxInt, Int.minInt, 0.0),
+            fn (l,(min,max,total))
              => let
                   val n = List.length l
                   val d = (Real.fromInt n) - avg
                 in
-                  (SOME (Option.fold(min,n,Int.min)),
-                   SOME (Option.fold(max,n,Int.max)),
+                  (Int.min(min,n),
+                   Int.max(max,n),
                    total + d * d)
                 end)
        val stdd = let open Real in Math.sqrt(total / (fromInt numb')) end
@@ -81,8 +80,8 @@ fun stats' (T {buckets, numItems, ...}) =
        seq [str "numBuckets = ", Int.layout numb],
        seq [str "avg = ", str (rfmt avg),
             str " stdd = ", str (rfmt stdd),
-            str " min = ", Option.layout Int.layout min,
-            str " max = ", Option.layout Int.layout max]]
+            str " min = ", Int.layout min,
+            str " max = ", Int.layout max]]
    end
 
 fun resize (T {buckets, hash, mask, ...}, size: int, newMask: word): unit =
@@ -155,7 +154,7 @@ fun peek (t, w, p) = peekGen (t, w, p, fn _ => NONE, SOME)
  *    end
  *)
 
-fun insertIfNew (table as T {buckets, numItems, ...}, w, p, f, 
+fun insertIfNew (table as T {buckets, numItems, ...}, w, p, f,
                  g: 'a -> unit) =
    let
       fun no (j, b) =

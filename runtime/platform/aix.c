@@ -1,3 +1,8 @@
+/* On AIX 5.1 (and older) there is no fegetround() or fesetround().
+   Instead, float.h defines fp_read_rnd() and fp_swap_rnd() with
+   equivalent functionality.  GCC has its own version of float.h, so
+   we include the system header directly before everything else. */
+#include "/usr/include/float.h"
 #include "platform.h"
 
 #include <sys/mman.h>
@@ -5,10 +10,46 @@
 #include <sys/vminfo.h>
 
 #include "diskBack.unix.c"
+#include "mkdir2.c"
 #include "mmap-protect.c"
 #include "nonwin.c"
 #include "recv.nonblock.c"
 #include "use-mmap.c"
+
+int fegetround (void)
+{
+        return fp_read_rnd ();
+}
+
+void fesetround (int mode)
+{
+        fp_swap_rnd (mode);
+}
+
+int fpclassify64 (double d)
+{
+        int c;
+        c = class (d);
+        switch (c) {
+        case FP_PLUS_NORM:
+        case FP_MINUS_NORM:
+                return FP_NORMAL;
+        case FP_PLUS_ZERO:
+        case FP_MINUS_ZERO:
+                return FP_ZERO;
+        case FP_PLUS_INF:
+        case FP_MINUS_INF:
+                return FP_INFINITE;
+        case FP_PLUS_DENORM:
+        case FP_MINUS_DENORM:
+                return FP_SUBNORMAL;
+        case FP_SNAN:
+        case FP_QNAN:
+                return FP_NAN;
+        default:
+                die ("Real_class error: invalid class %d\n", c);
+        }
+}
 
 size_t GC_pageSize (void) {
         long pageSize;

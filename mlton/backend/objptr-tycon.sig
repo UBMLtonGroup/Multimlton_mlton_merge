@@ -1,10 +1,11 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 2004-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2004-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
  * See the file MLton-LICENSE for details.
  *)
+
+type int = Int.t
 
 signature OBJPTR_TYCON_STRUCTS =
    sig
@@ -26,9 +27,11 @@ signature OBJPTR_TYCON =
       val setIndex: t * int -> unit
       val toString: t -> string
 
-      (* See gc/object.h. *) 
+      (* See gc/object.h. *)
       val stack: t
       val thread: t
       val weakGone: t
       val wordVector: Bits.t -> t
+      val headerOnly: t
+      val fill: t
    end

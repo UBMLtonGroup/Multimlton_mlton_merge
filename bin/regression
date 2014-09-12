@@ -91,7 +91,7 @@ fi
 cont='callcc.sml callcc2.sml callcc3.sml once.sml'
 flatArray='finalize.sml flat-array.sml flat-array.2.sml'
 intInf='conv.sml conv2.sml fixed-integer.sml harmonic.sml int-inf.*.sml slow.sml slower.sml smith-normal-form.sml'
-signal='finalize.sml signals.sml signals2.sml signals3.sml signals4.sml suspend.sml weak.sml'
+signal='finalize.sml signals.sml signals2.sml suspend.sml weak.sml'
 thread='thread0.sml thread1.sml thread2.sml mutex.sml prodcons.sml same-fringe.sml timeout.sml'
 world='world1.sml world2.sml world3.sml world4.sml world5.sml world6.sml'
 tmp=/tmp/z.regression.$$
@@ -149,28 +149,21 @@ for f in *.sml; do
                 fi
         fi
         case `host-os` in
-        cygwin)
+        cygwin|mingw)
                 case "$f" in
-                textio.2)
+                echo|signals|socket|suspend|textio.2|world*)
                         continue
                 ;;
                 esac
         ;;
-        hurd)
-                # Work-around hurd bug (http://bugs.debian.org/551470)
-                case "$f" in
-                mutex|prodcons|signals|signals2|signals3|signals4|suspend|thread2|timeout|world5)
-                        continue
-                ;;
-                esac
-        ;;
+        esac
+        case `host-os` in
         mingw)
                 case "$f" in
-                cmdline|command-line|echo|filesys|posix-exit|signals|signals2|signals3|signals4|socket|suspend|textio.2|unixpath|world*)
+                cmdline|command-line|filesys|posix-exit|signals2|unixpath)
                         continue
                 ;;
                 esac
-        ;;
         esac
         case "$f" in
         serialize)
@@ -180,7 +173,7 @@ for f in *.sml; do
         echo "testing $f"
         unset extraFlags
         case "$f" in
-        exn-history*)
+        exnHistory*)
                 extraFlags[${#extraFlags[@]}]="-const"
                 extraFlags[${#extraFlags[@]}]="Exn.keepHistory true"
         ;;
@@ -190,12 +183,12 @@ for f in *.sml; do
                 echo "\$(SML_LIB)/basis/basis.mlb
                         \$(SML_LIB)/basis/mlton.mlb
                         \$(SML_LIB)/basis/sml-nj.mlb
-                        ann 
+                        ann
                                 \"allowFFI true\"
                                 \"allowOverload true\"
                                 \"nonexhaustiveMatch ignore\"
                                 \"redundantMatch ignore\"
-                        in $f.sml 
+                        in $f.sml
                         end" >"$mlb"
                 "$mlton" "${flags[@]}" "${extraFlags[@]}" -output "$f" "$mlb"
                 if [ "$?" -ne '0' ] || ((! $cross) && [ ! -x "$f" ]); then
@@ -215,20 +208,19 @@ for f in *.sml; do
                 ;;
                 esac
                 libs="-lmlton -lgmp $libs -lgdtoa -lm"
-                # Must use $f.[0-9].[csS], not $f.*.[csS], because the
+                # Must use $f.[0-9].[cS], not $f.*.[cS], because the
                 # latter will include other files, e.g. for finalize,
-                # it will also include finalize.2. This happens only 
+                # it will also include finalize.2. This happens only
 		# when running cross regressions, which builds all the
 		# C files and saves them in this directory.
-		files="$f.[0-9].[csS]"
-		if [ 0 -ne `ls $f.[0-9][0-9].[csS] 2>/dev/null | wc -l` ]; then
-			files="$files $f.[0-9][0-9].[csS]"
+		files="$f.[0-9].[cS]"
+		if [ 0 -ne `ls $f.[0-9][0-9].[cS] 2>/dev/null | wc -l` ]; then
+			files="$files $f.[0-9][0-9].[cS]"
 		fi
                 gcc -o "$f" -w -O1                              \
-                        -I "/usr/local/include" \
                         -I "../build/lib/include"               \
-			-I "../build/lib/targets/$crossTarget/include"  \
-                        -L"../build/lib/targets/$crossTarget"           \
+			-I "../build/lib/$crossTarget/include"  \
+                        -L"../build/lib/$crossTarget"           \
                         -L/usr/pkg/lib                          \
                         -L/usr/local/lib                        \
                         $files $libs
@@ -238,7 +230,7 @@ for f in *.sml; do
 		if $forMinGW; then
                        nonZeroMsg="$nonZeroMsg"'\r'
 		fi
-                ( "./$f" || echo -e "$nonZeroMsg" ) >$tmp 2>&1 
+                ( "./$f" || echo -e "$nonZeroMsg" ) >$tmp 2>&1
                 if [ -r "$f.ok" ]; then
                         compare="$f.$HOST_ARCH-$HOST_OS.ok"
                         if [ ! -r $compare ]; then
@@ -250,7 +242,7 @@ for f in *.sml; do
                                 compare="$newcompare"
 			fi
                         if ! diff "$compare" "$tmp"; then
-                                echo "$f: difference with ${flags[*]} ${extraFlags[*]}"
+                                echo "difference with ${flags[*]} ${extraFlags[*]}"
                         fi
                 fi
         fi
@@ -280,7 +272,7 @@ for f in *.sml; do
                 rm -f "$tmpf" "$tmpf.sml"
         ;;
         esac
-done 
+done
 mmake clean >/dev/null
 cd "$src"
 for f in mllex mlyacc mlprof; do

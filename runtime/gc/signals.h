@@ -1,5 +1,4 @@
-/* Copyright (C) 2010 Matthew Fluet.
- * Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -11,13 +10,13 @@
 
 struct GC_signalsInfo {
   /* TRUE iff a signal handler is running. */
-  bool amInSignalHandler;   
+  bool amInSignalHandler;
   bool gcSignalHandled;
   bool gcSignalPending;
   /* TRUE iff a signal has been received but not handled by the
    * mutator.
    */
-  volatile uint32_t signalIsPending; 
+  volatile uint32_t signalIsPending;
   /* The signals for which a mutator signal handler needs to run in
    * order to handle the signal.
    */
@@ -26,6 +25,7 @@ struct GC_signalsInfo {
    * mutator signal handler.
    */
   sigset_t signalsPending;
+  sigset_t signalsSet;
 };
 
 #endif /* (defined (MLTON_GC_INTERNAL_TYPES)) */
@@ -35,5 +35,3 @@ struct GC_signalsInfo {
 static void initSignalStack (GC_state s);
 
 #endif /* (defined (MLTON_GC_INTERNAL_FUNCS)) */
-
-void GC_initSignalStack (GC_state s);

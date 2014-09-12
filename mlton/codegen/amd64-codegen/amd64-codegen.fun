@@ -1,5 +1,4 @@
-(* Copyright (C) 2009-2010 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -32,13 +31,13 @@ struct
   structure amd64EntryTransfer
     = amd64EntryTransfer (structure amd64 = amd64)
 
-  structure amd64MLton 
+  structure amd64MLton
     = amd64MLton (structure amd64MLtonBasic = amd64MLtonBasic
                 structure amd64Liveness = amd64Liveness)
 
   val implementsPrim = amd64MLton.implementsPrim
 
-  structure amd64Translate 
+  structure amd64Translate
     = amd64Translate (structure amd64 = amd64
                     structure amd64MLton = amd64MLton
                     structure amd64Liveness = amd64Liveness)
@@ -60,6 +59,9 @@ struct
   structure amd64AllocateRegisters
     = amd64AllocateRegisters (structure amd64 = amd64
                             structure amd64MLton = amd64MLton)
+
+  structure amd64Validate
+    = amd64Validate (structure amd64 = amd64)
 
   open amd64
   fun output {program as Machine.Program.T {chunks, frameLayouts, handlesSignals,
@@ -86,38 +88,38 @@ struct
            case profileInfo of
               NONE => Machine.ProfileInfo.empty
             | SOME pi => pi
-        val {newProfileLabel, delProfileLabel, getProfileInfo} = 
+        val {newProfileLabel, delProfileLabel, getProfileInfo} =
           Machine.ProfileInfo.modify profileInfo
 
         (* C specific *)
         fun outputC ()
           = let
               local
-                val Machine.Program.T 
-                    {chunks, 
-                     frameLayouts, 
-                     frameOffsets, 
-                     handlesSignals, 
-                     intInfs, 
-                     main, 
-                     maxFrameSize, 
-                     objectTypes, 
-                     reals, 
+                val Machine.Program.T
+                    {chunks,
+                     frameLayouts,
+                     frameOffsets,
+                     handlesSignals,
+                     intInfs,
+                     main,
+                     maxFrameSize,
+                     objectTypes,
+                     reals,
                      vectors, ...} =
                   program
               in
                 val program =
-                  Machine.Program.T 
-                  {chunks = chunks, 
-                   frameLayouts = frameLayouts, 
-                   frameOffsets = frameOffsets, 
-                   handlesSignals = handlesSignals, 
-                   intInfs = intInfs,  
-                   main = main, 
-                   maxFrameSize = maxFrameSize, 
-                   objectTypes = objectTypes, 
+                  Machine.Program.T
+                  {chunks = chunks,
+                   frameLayouts = frameLayouts,
+                   frameOffsets = frameOffsets,
+                   handlesSignals = handlesSignals,
+                   intInfs = intInfs,
+                   main = main,
+                   maxFrameSize = maxFrameSize,
+                   objectTypes = objectTypes,
                    profileInfo = SOME (getProfileInfo ()),
-                   reals = reals, 
+                   reals = reals,
                    vectors = vectors}
               end
               val {print, done, ...} = makeC ()
@@ -143,7 +145,7 @@ struct
                          Int.max (max, regMax t))
                      val m = m + 1
                   in
-                     print (concat ["PRIVATE ", CType.toString t, 
+                     print (concat ["PRIVATE ", CType.toString t,
                                     " local", CType.toString t,
                                     "[", Int.toString m, "];\n"])
                   end)
@@ -157,13 +159,20 @@ struct
                program = program,
                rest = rest}
               ; done ()
-            end 
+            end
 
         val outputC = Control.trace (Control.Pass, "outputC") outputC
 
         (* Assembly specific *)
 
         val _ = amd64MLtonBasic.init ()
+
+        fun file_begin file
+          = [amd64.Assembly.pseudoop_data (),
+             amd64.Assembly.pseudoop_p2align
+             (amd64.Immediate.int 2, NONE, NONE),
+             amd64.Assembly.label amd64MLton.fileNameLabel,
+             amd64.Assembly.pseudoop_string [file]]
 
         fun outputJumpToSML print =
            let
@@ -179,7 +188,7 @@ struct
               val asm =
                  [
                   amd64.Assembly.pseudoop_text (),
-                  amd64.Assembly.pseudoop_p2align 
+                  amd64.Assembly.pseudoop_p2align
                   (amd64.Immediate.int 4, NONE, NONE),
                   amd64.Assembly.pseudoop_global jumpToSML,
                   amd64.Assembly.pseudoop_hidden jumpToSML,
@@ -254,7 +263,7 @@ struct
                   {src = (amd64.Operand.address o amd64.Address.T)
                          {disp = (SOME o amd64.Immediate.labelPlusInt)
                                  (amd64MLton.gcState_label,
-                                  Bytes.toInt 
+                                  Bytes.toInt
                                   (Machine.Runtime.GCField.offset
                                    Machine.Runtime.GCField.StackTop)),
                           base = SOME amd64.Register.rip, index = NONE, scale = NONE},
@@ -264,18 +273,18 @@ struct
                   {src = (amd64.Operand.address o amd64.Address.T)
                          {disp = (SOME o amd64.Immediate.labelPlusInt)
                                  (amd64MLton.gcState_label,
-                                  Bytes.toInt 
+                                  Bytes.toInt
                                   (Machine.Runtime.GCField.offset
                                    Machine.Runtime.GCField.Frontier)),
                           base = SOME amd64.Register.rip, index = NONE, scale = NONE},
                    dst = amd64.Operand.register frontierReg,
                    size = amd64.Size.QUAD},
                   amd64.Assembly.instruction_jmp
-                  {target = amd64.Operand.register 
-                            (if win64 then amd64.Register.rcx 
+                  {target = amd64.Operand.register
+                            (if win64 then amd64.Register.rcx
                                       else amd64.Register.rdi),
                    absolute = true},
-                  amd64.Assembly.pseudoop_p2align 
+                  amd64.Assembly.pseudoop_p2align
                   (amd64.Immediate.int 4, NONE, NONE),
                   amd64.Assembly.pseudoop_global returnToC,
                   amd64.Assembly.pseudoop_hidden returnToC,
@@ -367,22 +376,22 @@ struct
         fun outputChunk (chunk as Machine.Chunk.T {blocks, chunkLabel, ...},
                          print)
           = let
-              val isMain 
+              val isMain
                 = Machine.ChunkLabel.equals(#chunkLabel main, chunkLabel)
 
-              val () 
+              val ()
                 = if isMain
                      then outputJumpToSML print
                      else ()
 
               val {chunk}
-                = amd64Translate.translateChunk 
+                = amd64Translate.translateChunk
                   {chunk = chunk,
                    frameInfoToAMD64 = frameInfoToAMD64,
                    liveInfo = liveInfo}
 
               val chunk : amd64.Chunk.t
-                = amd64Simplify.simplify 
+                = amd64Simplify.simplify
                   {chunk = chunk,
                    (* don't perform optimizations on
                     * the main function (initGlobals)
@@ -404,19 +413,26 @@ struct
                     reserveRsp = reserveRsp})
 
               val allocated_assembly : Assembly.t list list
-                = amd64AllocateRegisters.allocateRegisters 
+                = amd64AllocateRegisters.allocateRegisters
                   {assembly = unallocated_assembly,
                    (* don't calculate liveness info
                     * on the main function (initGlobals)
                     *)
                    liveness = not isMain}
 
+              val _ =
+                 Assert.assert
+                 ("amd64CodeGen.outputChunk", fn () =>
+                  amd64Validate.validate {assembly = allocated_assembly})
+
+              val validated_assembly = allocated_assembly
+
               val _ = Vector.foreach (blocks, Label.clear o Machine.Block.label)
               val _ = amd64.Immediate.clearAll ()
               val _ = amd64.MemLoc.clearAll ()
             in
               List.fold
-              (allocated_assembly,
+              (validated_assembly,
                if isMain then 30 else 0,
                fn (block, n)
                 => List.fold
@@ -433,8 +449,12 @@ struct
               val split = !Control.Native.split
               fun loop chunks
                 = let
-                    val {print, done, ...} = makeS()
-                    fun loop' (chunks, size) 
+                    val {file, print, done} = makeS()
+                    val _ = List.foreach
+                            (file_begin file,
+                             fn asm => (Layout.print(Assembly.layout asm, print);
+                                        print "\n"))
+                    fun loop' (chunks, size)
                       = case chunks
                           of [] => done ()
                            | chunk::chunks
@@ -442,17 +462,18 @@ struct
                                     of NONE => false
                                      | SOME maxSize => size > maxSize)
                                 then (done (); loop (chunk::chunks))
-                                else loop'(chunks, 
+                                else loop'(chunks,
                                            size + outputChunk (chunk, print))
-                  in 
+                  in
                     loop' (chunks, 0)
                   end
-            in 
+            in
               loop chunks
               ; amd64Translate.translateChunk_totals ()
               ; amd64Simplify.simplify_totals ()
               ; amd64GenerateTransfers.generateTransfers_totals ()
               ; amd64AllocateRegisters.allocateRegisters_totals ()
+              ; amd64Validate.validate_totals ()
             end
 
         val outputAssembly =
@@ -460,5 +481,5 @@ struct
       in
         outputAssembly()
         ; outputC()
-      end 
+      end
 end

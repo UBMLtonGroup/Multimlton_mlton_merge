@@ -44,6 +44,14 @@ end
 end
 structure IEEEReal = 
 struct
+structure FloatClass = 
+struct
+val FP_INFINITE = _const "IEEEReal_FloatClass_FP_INFINITE" : C_Int.t;
+val FP_NAN = _const "IEEEReal_FloatClass_FP_NAN" : C_Int.t;
+val FP_NORMAL = _const "IEEEReal_FloatClass_FP_NORMAL" : C_Int.t;
+val FP_SUBNORMAL = _const "IEEEReal_FloatClass_FP_SUBNORMAL" : C_Int.t;
+val FP_ZERO = _const "IEEEReal_FloatClass_FP_ZERO" : C_Int.t;
+end
 val getRoundingMode = _import "IEEEReal_getRoundingMode" private : unit -> C_Int.t;
 structure RoundingMode = 
 struct
@@ -53,13 +61,11 @@ val FE_TONEAREST = _const "IEEEReal_RoundingMode_FE_TONEAREST" : C_Int.t;
 val FE_TOWARDZERO = _const "IEEEReal_RoundingMode_FE_TOWARDZERO" : C_Int.t;
 val FE_UPWARD = _const "IEEEReal_RoundingMode_FE_UPWARD" : C_Int.t;
 end
-val setRoundingMode = _import "IEEEReal_setRoundingMode" private : C_Int.t -> C_Int.t;
+val setRoundingMode = _import "IEEEReal_setRoundingMode" private : C_Int.t -> unit;
 end
 structure MinGW = 
 struct
-val clearNonBlock = _import "MinGW_clearNonBlock" private : C_Fd.t -> unit;
 val getTempPath = _import "MinGW_getTempPath" private : C_Size.t * (Char8.t) array -> C_Size.t;
-val setNonBlock = _import "MinGW_setNonBlock" private : C_Fd.t -> unit;
 end
 structure MLton = 
 struct
@@ -73,6 +79,7 @@ val VIRTUAL = _const "MLton_Itimer_VIRTUAL" : C_Int.t;
 end
 structure Process = 
 struct
+val cwait = _import "MLton_Process_cwait" private : C_PId.t * (C_Status.t) ref -> (C_PId.t) C_Errno.t;
 val spawne = _import "MLton_Process_spawne" private : NullString8.t * (NullString8.t) array * (NullString8.t) array -> (C_PId.t) C_Errno.t;
 val spawnp = _import "MLton_Process_spawnp" private : NullString8.t * (NullString8.t) array -> (C_PId.t) C_Errno.t;
 end
@@ -532,7 +539,6 @@ val SC_AIO_PRIO_DELTA_MAX = _const "Posix_ProcEnv_SC_AIO_PRIO_DELTA_MAX" : C_Int
 val SC_ARG_MAX = _const "Posix_ProcEnv_SC_ARG_MAX" : C_Int.t;
 val SC_ASYNCHRONOUS_IO = _const "Posix_ProcEnv_SC_ASYNCHRONOUS_IO" : C_Int.t;
 val SC_ATEXIT_MAX = _const "Posix_ProcEnv_SC_ATEXIT_MAX" : C_Int.t;
-val SC_AVPHYS_PAGES = _const "Posix_ProcEnv_SC_AVPHYS_PAGES" : C_Int.t;
 val SC_BARRIERS = _const "Posix_ProcEnv_SC_BARRIERS" : C_Int.t;
 val SC_BC_BASE_MAX = _const "Posix_ProcEnv_SC_BC_BASE_MAX" : C_Int.t;
 val SC_BC_DIM_MAX = _const "Posix_ProcEnv_SC_BC_DIM_MAX" : C_Int.t;
@@ -563,12 +569,9 @@ val SC_MONOTONIC_CLOCK = _const "Posix_ProcEnv_SC_MONOTONIC_CLOCK" : C_Int.t;
 val SC_MQ_OPEN_MAX = _const "Posix_ProcEnv_SC_MQ_OPEN_MAX" : C_Int.t;
 val SC_MQ_PRIO_MAX = _const "Posix_ProcEnv_SC_MQ_PRIO_MAX" : C_Int.t;
 val SC_NGROUPS_MAX = _const "Posix_ProcEnv_SC_NGROUPS_MAX" : C_Int.t;
-val SC_NPROCESSORS_CONF = _const "Posix_ProcEnv_SC_NPROCESSORS_CONF" : C_Int.t;
-val SC_NPROCESSORS_ONLN = _const "Posix_ProcEnv_SC_NPROCESSORS_ONLN" : C_Int.t;
 val SC_OPEN_MAX = _const "Posix_ProcEnv_SC_OPEN_MAX" : C_Int.t;
 val SC_PAGE_SIZE = _const "Posix_ProcEnv_SC_PAGE_SIZE" : C_Int.t;
 val SC_PAGESIZE = _const "Posix_ProcEnv_SC_PAGESIZE" : C_Int.t;
-val SC_PHYS_PAGES = _const "Posix_ProcEnv_SC_PHYS_PAGES" : C_Int.t;
 val SC_PRIORITIZED_IO = _const "Posix_ProcEnv_SC_PRIORITIZED_IO" : C_Int.t;
 val SC_PRIORITY_SCHEDULING = _const "Posix_ProcEnv_SC_PRIORITY_SCHEDULING" : C_Int.t;
 val SC_RAW_SOCKETS = _const "Posix_ProcEnv_SC_RAW_SOCKETS" : C_Int.t;
@@ -677,6 +680,7 @@ val ifStopped = _import "Posix_Process_ifStopped" private : C_Status.t -> C_Int.
 val kill = _import "Posix_Process_kill" private : C_PId.t * C_Signal.t -> (C_Int.t) C_Errno.t;
 val nanosleep = _import "Posix_Process_nanosleep" private : (C_Time.t) ref * (C_Long.t) ref -> (C_Int.t) C_Errno.t;
 val pause = _import "Posix_Process_pause" private : unit -> (C_Int.t) C_Errno.t;
+val raiseSig = _import "Posix_Process_raiseSig" private : C_Signal.t -> (C_Int.t) C_Errno.t;
 val sleep = _import "Posix_Process_sleep" private : C_UInt.t -> C_UInt.t;
 val stopSig = _import "Posix_Process_stopSig" private : C_Status.t -> C_Signal.t;
 val system = _import "Posix_Process_system" private : NullString8.t -> (C_Status.t) C_Errno.t;
@@ -686,7 +690,7 @@ struct
 val NOHANG = _const "Posix_Process_W_NOHANG" : C_Int.t;
 val UNTRACED = _const "Posix_Process_W_UNTRACED" : C_Int.t;
 end
-val waitpid = _import "Posix_Process_waitpid" private : C_PId.t * (C_Status.t) ref * C_Int.t -> (C_PId.t) C_Errno.t;
+val waitpid = _import "Posix_Process_waitpid" private : C_PId.t * (C_Int.t) ref * C_Int.t -> (C_PId.t) C_Errno.t;
 end
 structure Signal = 
 struct
@@ -699,6 +703,7 @@ val isIgnore = _import "Posix_Signal_isIgnore" private : C_Signal.t * (C_Int.t) 
 val isPending = _import "Posix_Signal_isPending" private : C_Signal.t -> C_Int.t;
 val isPendingGC = _import "Posix_Signal_isPendingGC" private : unit -> C_Int.t;
 val NSIG = _const "Posix_Signal_NSIG" : C_Int.t;
+val pthread_sigmask = _import "Posix_Signal_pthread_sigmask" private : C_Int.t -> (C_Int.t) C_Errno.t;
 val resetPending = _import "Posix_Signal_resetPending" private : unit -> unit;
 val SIG_BLOCK = _const "Posix_Signal_SIG_BLOCK" : C_Int.t;
 val SIG_SETMASK = _const "Posix_Signal_SIG_SETMASK" : C_Int.t;
@@ -911,6 +916,7 @@ type t = Real32.t
 val abs = _import "Real32_abs" private : Real32.t -> Real32.t;
 val add = _import "Real32_add" private : Real32.t * Real32.t -> Real32.t;
 val castToWord32 = _import "Real32_castToWord32" private : Real32.t -> Word32.t;
+val class = _import "Real32_class" private : Real32.t -> C_Int.t;
 val div = _import "Real32_div" private : Real32.t * Real32.t -> Real32.t;
 val equal = _import "Real32_equal" private : Real32.t * Real32.t -> Bool.t;
 val fetch = _import "Real32_fetch" private : (Real32.t) ref -> Real32.t;
@@ -939,15 +945,15 @@ val sqrt = _import "Real32_Math_sqrt" private : Real32.t -> Real32.t;
 val tan = _import "Real32_Math_tan" private : Real32.t -> Real32.t;
 val tanh = _import "Real32_Math_tanh" private : Real32.t -> Real32.t;
 end
+val (maxFiniteGet, maxFiniteSet) = _symbol "Real32_maxFinite" private : (unit -> (Real32.t)) * ((Real32.t) -> unit);
+val (minNormalPosGet, minNormalPosSet) = _symbol "Real32_minNormalPos" private : (unit -> (Real32.t)) * ((Real32.t) -> unit);
+val (minPosGet, minPosSet) = _symbol "Real32_minPos" private : (unit -> (Real32.t)) * ((Real32.t) -> unit);
 val modf = _import "Real32_modf" private : Real32.t * (Real32.t) ref -> Real32.t;
 val move = _import "Real32_move" private : (Real32.t) ref * (Real32.t) ref -> unit;
 val mul = _import "Real32_mul" private : Real32.t * Real32.t -> Real32.t;
 val muladd = _import "Real32_muladd" private : Real32.t * Real32.t * Real32.t -> Real32.t;
 val mulsub = _import "Real32_mulsub" private : Real32.t * Real32.t * Real32.t -> Real32.t;
 val neg = _import "Real32_neg" private : Real32.t -> Real32.t;
-val realCeil = _import "Real32_realCeil" private : Real32.t -> Real32.t;
-val realFloor = _import "Real32_realFloor" private : Real32.t -> Real32.t;
-val realTrunc = _import "Real32_realTrunc" private : Real32.t -> Real32.t;
 val rndToReal32 = _import "Real32_rndToReal32" private : Real32.t -> Real32.t;
 val rndToReal64 = _import "Real32_rndToReal64" private : Real32.t -> Real64.t;
 val rndToWordS16 = _import "Real32_rndToWordS16" private : Real32.t -> Int16.t;
@@ -959,8 +965,9 @@ val rndToWordU32 = _import "Real32_rndToWordU32" private : Real32.t -> Word32.t;
 val rndToWordU64 = _import "Real32_rndToWordU64" private : Real32.t -> Word64.t;
 val rndToWordU8 = _import "Real32_rndToWordU8" private : Real32.t -> Word8.t;
 val round = _import "Real32_round" private : Real32.t -> Real32.t;
+val signBit = _import "Real32_signBit" private : Real32.t -> C_Int.t;
 val store = _import "Real32_store" private : (Real32.t) ref * Real32.t -> unit;
-val strtor = _import "Real32_strtor" private : NullString8.t * C_Int.t -> Real32.t;
+val strto = _import "Real32_strto" private : NullString8.t * C_Int.t -> Real32.t;
 val sub = _import "Real32_sub" private : Real32.t * Real32.t -> Real32.t;
 end
 structure Real64 = 
@@ -969,6 +976,7 @@ type t = Real64.t
 val abs = _import "Real64_abs" private : Real64.t -> Real64.t;
 val add = _import "Real64_add" private : Real64.t * Real64.t -> Real64.t;
 val castToWord64 = _import "Real64_castToWord64" private : Real64.t -> Word64.t;
+val class = _import "Real64_class" private : Real64.t -> C_Int.t;
 val div = _import "Real64_div" private : Real64.t * Real64.t -> Real64.t;
 val equal = _import "Real64_equal" private : Real64.t * Real64.t -> Bool.t;
 val fetch = _import "Real64_fetch" private : (Real64.t) ref -> Real64.t;
@@ -997,15 +1005,15 @@ val sqrt = _import "Real64_Math_sqrt" private : Real64.t -> Real64.t;
 val tan = _import "Real64_Math_tan" private : Real64.t -> Real64.t;
 val tanh = _import "Real64_Math_tanh" private : Real64.t -> Real64.t;
 end
+val (maxFiniteGet, maxFiniteSet) = _symbol "Real64_maxFinite" private : (unit -> (Real64.t)) * ((Real64.t) -> unit);
+val (minNormalPosGet, minNormalPosSet) = _symbol "Real64_minNormalPos" private : (unit -> (Real64.t)) * ((Real64.t) -> unit);
+val (minPosGet, minPosSet) = _symbol "Real64_minPos" private : (unit -> (Real64.t)) * ((Real64.t) -> unit);
 val modf = _import "Real64_modf" private : Real64.t * (Real64.t) ref -> Real64.t;
 val move = _import "Real64_move" private : (Real64.t) ref * (Real64.t) ref -> unit;
 val mul = _import "Real64_mul" private : Real64.t * Real64.t -> Real64.t;
 val muladd = _import "Real64_muladd" private : Real64.t * Real64.t * Real64.t -> Real64.t;
 val mulsub = _import "Real64_mulsub" private : Real64.t * Real64.t * Real64.t -> Real64.t;
 val neg = _import "Real64_neg" private : Real64.t -> Real64.t;
-val realCeil = _import "Real64_realCeil" private : Real64.t -> Real64.t;
-val realFloor = _import "Real64_realFloor" private : Real64.t -> Real64.t;
-val realTrunc = _import "Real64_realTrunc" private : Real64.t -> Real64.t;
 val rndToReal32 = _import "Real64_rndToReal32" private : Real64.t -> Real32.t;
 val rndToReal64 = _import "Real64_rndToReal64" private : Real64.t -> Real64.t;
 val rndToWordS16 = _import "Real64_rndToWordS16" private : Real64.t -> Int16.t;
@@ -1017,8 +1025,9 @@ val rndToWordU32 = _import "Real64_rndToWordU32" private : Real64.t -> Word32.t;
 val rndToWordU64 = _import "Real64_rndToWordU64" private : Real64.t -> Word64.t;
 val rndToWordU8 = _import "Real64_rndToWordU8" private : Real64.t -> Word8.t;
 val round = _import "Real64_round" private : Real64.t -> Real64.t;
+val signBit = _import "Real64_signBit" private : Real64.t -> C_Int.t;
 val store = _import "Real64_store" private : (Real64.t) ref * Real64.t -> unit;
-val strtor = _import "Real64_strtor" private : NullString8.t * C_Int.t -> Real64.t;
+val strto = _import "Real64_strto" private : NullString8.t * C_Int.t -> Real64.t;
 val sub = _import "Real64_sub" private : Real64.t * Real64.t -> Real64.t;
 end
 structure Socket = 
@@ -1036,14 +1045,15 @@ val close = _import "Socket_close" private : C_Sock.t -> (C_Int.t) C_Errno.t;
 val connect = _import "Socket_connect" private : C_Sock.t * (Word8.t) vector * C_Socklen.t -> (C_Int.t) C_Errno.t;
 structure Ctl = 
 struct
-val getATMARK = _import "Socket_Ctl_getATMARK" private : C_Sock.t * (C_Int.t) ref -> (C_Int.t) C_Errno.t;
-val getNREAD = _import "Socket_Ctl_getNREAD" private : C_Sock.t * (C_Int.t) ref -> (C_Int.t) C_Errno.t;
+val FIONBIO = _const "Socket_Ctl_FIONBIO" : C_Int.t;
+val FIONREAD = _const "Socket_Ctl_FIONREAD" : C_Int.t;
+val getIOCtl = _import "Socket_Ctl_getIOCtl" private : C_Sock.t * C_Int.t * (Word8.t) array -> (C_Int.t) C_Errno.t;
 val getPeerName = _import "Socket_Ctl_getPeerName" private : C_Sock.t * (Word8.t) array * (C_Socklen.t) ref -> (C_Int.t) C_Errno.t;
 val getSockName = _import "Socket_Ctl_getSockName" private : C_Sock.t * (Word8.t) array * (C_Socklen.t) ref -> (C_Int.t) C_Errno.t;
-val getSockOptC_Int = _import "Socket_Ctl_getSockOptC_Int" private : C_Sock.t * C_Int.t * C_Int.t * (C_Int.t) ref -> (C_Int.t) C_Errno.t;
-val getSockOptC_Linger = _import "Socket_Ctl_getSockOptC_Linger" private : C_Sock.t * C_Int.t * C_Int.t * (C_Int.t) ref * (C_Int.t) ref -> (C_Int.t) C_Errno.t;
-val setSockOptC_Int = _import "Socket_Ctl_setSockOptC_Int" private : C_Sock.t * C_Int.t * C_Int.t * C_Int.t -> (C_Int.t) C_Errno.t;
-val setSockOptC_Linger = _import "Socket_Ctl_setSockOptC_Linger" private : C_Sock.t * C_Int.t * C_Int.t * C_Int.t * C_Int.t -> (C_Int.t) C_Errno.t;
+val getSockOpt = _import "Socket_Ctl_getSockOpt" private : C_Sock.t * C_Int.t * C_Int.t * (Word8.t) array * (C_Socklen.t) ref -> (C_Int.t) C_Errno.t;
+val setIOCtl = _import "Socket_Ctl_setIOCtl" private : C_Sock.t * C_Int.t * (Word8.t) vector -> (C_Int.t) C_Errno.t;
+val setSockOpt = _import "Socket_Ctl_setSockOpt" private : C_Sock.t * C_Int.t * C_Int.t * (Word8.t) vector * C_Socklen.t -> (C_Int.t) C_Errno.t;
+val SIOCATMARK = _const "Socket_Ctl_SIOCATMARK" : C_Int.t;
 val SO_ACCEPTCONN = _const "Socket_Ctl_SO_ACCEPTCONN" : C_Int.t;
 val SO_BROADCAST = _const "Socket_Ctl_SO_BROADCAST" : C_Int.t;
 val SO_DEBUG = _const "Socket_Ctl_SO_DEBUG" : C_Int.t;
@@ -1134,8 +1144,6 @@ struct
 structure Process = 
 struct
 val create = _import "Windows_Process_create" private : NullString8.t * NullString8.t * NullString8.t * C_Fd.t * C_Fd.t * C_Fd.t -> (C_PId.t) C_Errno.t;
-val createNull = _import "Windows_Process_createNull" private : NullString8.t * NullString8.t * C_Fd.t * C_Fd.t * C_Fd.t -> (C_PId.t) C_Errno.t;
-val getexitcode = _import "Windows_Process_getexitcode" private : C_PId.t * (C_Status.t) ref -> (C_Int.t) C_Errno.t;
 val terminate = _import "Windows_Process_terminate" private : C_PId.t * C_Signal.t -> (C_Int.t) C_Errno.t;
 end
 end

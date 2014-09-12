@@ -10,3 +10,7 @@
 /mlton-stubs.mlb
 /mlton.def-use
 /upgrade-basis.sml
+/12011.sml
+/16369.sml
+/7648.sml
+*.gitignore

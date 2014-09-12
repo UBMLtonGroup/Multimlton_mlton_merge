@@ -1,5 +1,4 @@
-(* Copyright (C) 2011,2014 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -63,8 +62,8 @@ structure CoreML = CoreML (open Atoms
                                              expandOpaque = true,
                                              var = var}
 
-                                 fun layout t = 
-                                    layoutPrettyAux 
+                                 fun layout t =
+                                    layoutPrettyAux
                                     (t, {expandOpaque = true,
                                          localTyvarNames = false})
                               end)
@@ -112,8 +111,8 @@ structure Backend = Backend (structure Ssa = Ssa2
                              fun funcToLabel f = f)
 structure CCodegen = CCodegen (structure Ffi = Ffi
                                structure Machine = Machine)
-structure LLVMCodegen = LLVMCodegen (structure CCodegen = CCodegen
-                                     structure Machine = Machine)
+structure Bytecode = Bytecode (structure CCodegen = CCodegen
+                               structure Machine = Machine)
 structure x86Codegen = x86Codegen (structure CCodegen = CCodegen
                                    structure Machine = Machine)
 structure amd64Codegen = amd64Codegen (structure CCodegen = CCodegen
@@ -137,7 +136,7 @@ fun setCommandLineConstant (c as {name, value}) =
             set
          end
       val () =
-         case List.peek ([("Exn.keepHistory", 
+         case List.peek ([("Exn.keepHistory",
                            make (Bool.fromString, Control.exnHistory))],
                          fn (s, _) => s = name) of
             NONE => ()
@@ -177,7 +176,7 @@ val lookupConstant =
       fn z => f () z
    end
 
-(* ------------------------------------------------- *)   
+(* ------------------------------------------------- *)
 (*                   Primitive Env                   *)
 (* ------------------------------------------------- *)
 
@@ -231,7 +230,7 @@ local
 
    structure Env =
       struct
-         open Env 
+         open Env
 
          structure Tycon =
             struct
@@ -341,7 +340,7 @@ structure MLBString:>
 
 val lexAndParseMLB = MLBString.lexAndParseMLB
 
-val lexAndParseMLB: MLBString.t -> Ast.Basdec.t = 
+val lexAndParseMLB: MLBString.t -> Ast.Basdec.t =
    fn input =>
    let
       val ast = lexAndParseMLB input
@@ -414,7 +413,7 @@ fun elaborate {input: MLBString.t}: Xml.Program.t =
       val _ =
          case !Control.exportHeader of
             NONE => ()
-          | SOME f => 
+          | SOME f =>
                File.withOut
                (f, fn out =>
                 let
@@ -439,11 +438,11 @@ fun elaborate {input: MLBString.t}: Xml.Program.t =
                        | Control.Executable => "PART_OF"
                        | Control.LibArchive => "NO_DEFAULT_LINK"
                        | Control.Library    => "DYNAMIC_LINK"
-                   val _ = 
+                   val _ =
                       print ("#if !defined(PART_OF_"      ^ libcap ^ ") && \\\n\
                              \    !defined(STATIC_LINK_"  ^ libcap ^ ") && \\\n\
                              \    !defined(DYNAMIC_LINK_" ^ libcap ^ ")\n")
-                   val _ = 
+                   val _ =
                       print ("#define " ^ defaultLinkage ^ "_" ^ libcap ^ "\n")
                    val _ = print "#endif\n"
                    val _ = print "\n"
@@ -466,11 +465,11 @@ fun elaborate {input: MLBString.t}: Xml.Program.t =
                    val _ = print "extern \"C\" {\n"
                    val _ = print "#endif\n"
                    val _ = print "\n"
-                   val _ = 
+                   val _ =
                       if !Control.format = Control.Executable then () else
                           (print ("MLLIB_PUBLIC(void " ^ libname ^ "_open(int argc, const char** argv);)\n")
                           ;print ("MLLIB_PUBLIC(void " ^ libname ^ "_close();)\n"))
-                   val _ = Ffi.declareHeaders {print = print} 
+                   val _ = Ffi.declareHeaders {print = print}
                    val _ = print "\n"
                    val _ = print "#undef MLLIB_PRIVATE\n"
                    val _ = print "#undef MLLIB_PUBLIC\n"
@@ -529,10 +528,13 @@ fun elaborate {input: MLBString.t}: Xml.Program.t =
              currentThread = get "currentThread_Offset",
              curSourceSeqsIndex = get "sourceMaps.curSourceSeqsIndex_Offset",
              exnStack = get "exnStack_Offset",
+             ffiOpArgsResPtr = get "ffiOpArgsResPtr_Offset",
              frontier = get "frontier_Offset",
+             globalObjptrNonRoot = get "globalObjptrNonRoot_Offset",
              limit = get "limit_Offset",
              limitPlusSlop = get "limitPlusSlop_Offset",
              maxFrameSize = get "maxFrameSize_Offset",
+             returnToC = get "returnToC_Offset",
              signalIsPending = get "signalsInfo.signalIsPending_Offset",
              stackBottom = get "stackBottom_Offset",
              stackLimit = get "stackLimit_Offset",
@@ -545,10 +547,13 @@ fun elaborate {input: MLBString.t}: Xml.Program.t =
              currentThread = get "currentThread_Size",
              curSourceSeqsIndex = get "sourceMaps.curSourceSeqsIndex_Size",
              exnStack = get "exnStack_Size",
+             ffiOpArgsResPtr = get "ffiOpArgsResPtr_Size",
              frontier = get "frontier_Size",
+             globalObjptrNonRoot = get "globalObjptrNonRoot_Size",
              limit = get "limit_Size",
              limitPlusSlop = get "limitPlusSlop_Size",
              maxFrameSize = get "maxFrameSize_Size",
+             returnToC = get "returnToC_Size",
              signalIsPending = get "signalsInfo.signalIsPending_Size",
              stackBottom = get "stackBottom_Size",
              stackLimit = get "stackLimit_Size",
@@ -683,10 +688,10 @@ fun preCodegen {input: MLBString.t}: Machine.Program.t =
          end
       val codegenImplementsPrim =
          case !Control.codegen of
-            Control.AMD64Codegen => amd64Codegen.implementsPrim
+            Control.Bytecode => Bytecode.implementsPrim
           | Control.CCodegen => CCodegen.implementsPrim
-          | Control.LLVMCodegen => LLVMCodegen.implementsPrim
-          | Control.X86Codegen => x86Codegen.implementsPrim
+          | Control.x86Codegen => x86Codegen.implementsPrim
+          | Control.amd64Codegen => amd64Codegen.implementsPrim
       val machine =
          Control.passTypeCheck
          {display = Control.Layouts Machine.Program.layouts,
@@ -716,7 +721,7 @@ fun preCodegen {input: MLBString.t}: Machine.Program.t =
       machine
    end
 
-fun compile {input: MLBString.t, outputC, outputLL, outputS}: unit =
+fun compile {input: MLBString.t, outputC, outputS}: unit =
    let
       val machine =
          Control.trace (Control.Top, "pre codegen")
@@ -726,39 +731,36 @@ fun compile {input: MLBString.t, outputC, outputLL, outputS}: unit =
           ; Machine.Label.printNameAlphaNumeric := true)
       val () =
          case !Control.codegen of
-            Control.AMD64Codegen =>
-               (clearNames ()
-                ; (Control.trace (Control.Top, "amd64 code gen")
-                   amd64Codegen.output {program = machine,
-                                        outputC = outputC,
-                                        outputS = outputS}))
+            Control.Bytecode =>
+               Control.trace (Control.Top, "bytecode gen")
+               Bytecode.output {program = machine,
+                                outputC = outputC}
           | Control.CCodegen =>
                (clearNames ()
                 ; (Control.trace (Control.Top, "C code gen")
                    CCodegen.output {program = machine,
                                     outputC = outputC}))
-          | Control.LLVMCodegen =>
-               (clearNames ()
-                ; (Control.trace (Control.Top, "llvm code gen")
-                   LLVMCodegen.output {program = machine,
-                                       outputC = outputC,
-                                      outputLL = outputLL}))
-          | Control.X86Codegen =>
+          | Control.x86Codegen =>
                (clearNames ()
                 ; (Control.trace (Control.Top, "x86 code gen")
                    x86Codegen.output {program = machine,
                                       outputC = outputC,
                                       outputS = outputS}))
+          | Control.amd64Codegen =>
+               (clearNames ()
+                ; (Control.trace (Control.Top, "amd64 code gen")
+                   amd64Codegen.output {program = machine,
+                                        outputC = outputC,
+                                        outputS = outputS}))
       val _ = Control.message (Control.Detail, PropertyList.stats)
       val _ = Control.message (Control.Detail, HashSet.stats)
    in
       ()
    end handle Done => ()
 
-fun compileMLB {input: File.t, outputC, outputLL, outputS}: unit =
+fun compileMLB {input: File.t, outputC, outputS}: unit =
    compile {input = MLBString.fromFile input,
             outputC = outputC,
-            outputLL = outputLL,
             outputS = outputS}
 
 val elaborateMLB =
@@ -787,10 +789,9 @@ local
                 end)
       end
 in
-   fun compileSML {input: File.t list, outputC, outputLL, outputS}: unit =
+   fun compileSML {input: File.t list, outputC, outputS}: unit =
       compile {input = genMLB {input = input},
                outputC = outputC,
-               outputLL = outputLL,
                outputS = outputS}
    val elaborateSML =
       fn {input: File.t list} =>

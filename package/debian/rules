@@ -1,36 +1,59 @@
 #!/usr/bin/make -f
+# Sample debian/rules that uses debhelper.
+# GNU copyright 1997 to 1999 by Joey Hess.
 
-include /usr/share/cdbs/1/rules/debhelper.mk
-include /usr/share/cdbs/1/class/makefile.mk
-include /usr/share/cdbs/1/rules/patchsys-quilt.mk
+CP = cp -fpR
 
-HEAPSIZE := $(shell . debian/heap-size)
+configure: configure-stamp
+configure-stamp:
+	# Add here commands to configure the package.
+	touch configure-stamp
 
-# MLton compiles optimized, debug, and pic versions on its own.
-DEB_MAKE_INVOKE = $(DEB_MAKE_ENVVARS) make -C $(DEB_BUILDDIR)
+build: configure-stamp build-stamp
+build-stamp:
+	# Add here commands to compile the package.
+	$(MAKE)
+	#/usr/bin/docbook-to-man debian/mlton.sgml > mlton.1
+	touch build-stamp
 
-# The MLton guide is html. Don't compress example .sml files.
-DEB_COMPRESS_EXCLUDE_ALL = mlton/guide .sml
+clean:
+	rm -f build-stamp configure-stamp
+	# Add here commands to clean up after the build process.
+	-$(MAKE) clean
 
-DEB_MAKE_CLEAN_TARGET   = clean clean-git
-DEB_MAKE_BUILD_TARGET   = all RUNTIME_ARGS="$(HEAPSIZE)"
-DEB_MAKE_INSTALL_TARGET = install-no-strip DESTDIR=$(CURDIR)/debian/tmp/ PREFIX=/usr MAN_PREFIX_EXTRA=/share
-DEB_MAKE_CHECK_TARGET   = check
+BUILDDIR = $(CURDIR)/debian/mlton
+install: build
+	# Add here commands to install the package into debian/mlton.
+	$(MAKE) install post-install-debian DESTDIR=$(BUILDDIR) \
+		MAN_PREFIX_EXTRA=/share
 
-# Useful when inspecting build logs
-common-configure-arch::
-	free
+# Build architecture-independent files here.
+binary-indep: build install
+# We have nothing to do by default.
 
-# Move MLton target to per-architecture path
-common-install-arch::
-	mv $(CURDIR)/debian/tmp/usr/lib/mlton/targets/self $(CURDIR)/debian/tmp/usr/lib/mlton/targets/$(DEB_HOST_GNU_TYPE)
-	ln -s $(DEB_HOST_GNU_TYPE) $(CURDIR)/debian/tmp/usr/lib/mlton/targets/self
+# Build architecture-dependent files here.
+binary-arch: build install
+	# dh_installdeb
+	mkdir -p $(BUILDDIR)/DEBIAN
+	for f in postinst prerm; do 				\
+		$(CP) debian/mlton.$$f $(BUILDDIR)/DEBIAN/$$f;	\
+		chown root.root $(BUILDDIR)/DEBIAN/$$f;		\
+	done
+	# dh_shlibdeps
+	dpkg-shlibdeps \
+		-e$(BUILDDIR)/usr/bin/mllex \
+		-e$(BUILDDIR)/usr/bin/mlnlffigen \
+		-e$(BUILDDIR)/usr/bin/mlprof \
+		-e$(BUILDDIR)/usr/bin/mlyacc \
+		-e$(BUILDDIR)/usr/lib/mlton/mlton-compile 
+	# dh_gencontrol
+	dpkg-gencontrol -isp -P$(BUILDDIR)
+	# dh_md5sums
+	cd $(BUILDDIR) && \
+		find * -type f ! -regex '^DEBIAN/.*' -print0 | \
+			xargs -r0 md5sum >DEBIAN/md5sums
+	# dh_builddeb
+	dpkg-deb --build $(BUILDDIR) ../
 
-# Remove licenses and empty directories to appease lintian
-common-install-indep::
-	find $(CURDIR)/debian/tmp -type d -empty -delete
-	rm -rf $(CURDIR)/debian/tmp/usr/share/doc/mlton/license
-	if test -n "$(DEB_ISNATIVE)"; then mv \
-		$(CURDIR)/debian/tmp/usr/share/doc/mlton/changelog \
-		$(CURDIR)/debian/tmp/usr/share/doc/mlton/changelog.PreviousRelease; \
-	fi
+binary: binary-indep binary-arch
+.PHONY: build clean binary-indep binary-arch binary install configure

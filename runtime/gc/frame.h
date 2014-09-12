@@ -15,7 +15,7 @@
  * for each frame.  This data is declared as follows:
  *
  *  GC_frameLayout *frameLayouts;
- * 
+ *
  * The frameLayouts pointer is initialized to point to a static array
  * of frame layouts that is emitted for each compiled program.  The
  * kind field identifies whether or not the frame is for a C call.

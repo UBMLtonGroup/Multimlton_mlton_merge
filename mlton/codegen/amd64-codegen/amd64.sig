@@ -1,11 +1,12 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
  * MLton is released under a BSD-style license.
  * See the file MLton-LICENSE for details.
  *)
+
+type int = Int.t
 
 signature AMD64_STRUCTS =
   sig
@@ -65,7 +66,7 @@ signature AMD64 =
         val allReg : reg list
 
         datatype part
-          = R | E | X | L
+          = R| E | X | L
 
         datatype t = T of {reg: reg, part: part}
         val all : t list

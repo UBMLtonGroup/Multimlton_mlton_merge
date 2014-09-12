@@ -2,13 +2,9 @@
 
 static void fd_modify(int fd, int flags, int add, int shouldRemove)
 {
-        int status;
-        
         if (flags & MSG_DONTWAIT) {
-                status = errno;
                 int f = fcntl(fd, F_GETFL);
                 fcntl(fd, F_SETFL, (f | add) & ~shouldRemove);
-                errno = status;
         }
 }
 

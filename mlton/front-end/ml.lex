@@ -14,6 +14,8 @@
  *
  *)
 
+type int = Int.t
+
 type svalue = Tokens.svalue
 type pos = SourcePos.t
 type lexresult = (svalue, pos) Tokens.token

@@ -1,5 +1,4 @@
-(* Copyright (C) 2013 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -22,9 +21,11 @@ structure IntInf: INT_INF_EXTRA =
       val precision: Int.int option = NONE
 
       fun sign (arg: int): Int.int =
-         if arg < zero then ~1
-         else if arg > zero then 1
-         else 0
+         if Prim.isSmall arg
+            then I.sign (Prim.dropTagCoerceInt arg)
+            else if isNeg arg
+                    then ~1
+                    else 1
 
       fun sameSign (x, y) = sign x = sign y
 
@@ -165,7 +166,7 @@ structure IntInf: INT_INF_EXTRA =
                                     chunk = W.+ (W.* (base, chunk), dig),
                                     s = s'}
                (* digitsPerChunk = floor((W.wordSize - 3) / (log2 base)) *)
-               val digitsPerChunk : Int32.t =
+               val digitsPerChunk =
                   case (W.wordSize, base) of
                      (64, 0w16) => 15
                    | (64, 0w10) => 18
@@ -199,8 +200,8 @@ structure IntInf: INT_INF_EXTRA =
                              NONE => (acc, s)
                            | SOME ({more, shift, chunk}, s') =>
                                 loop (more,
-                                      ((W.toLargeInt shift) * acc)
-                                      + (W.toLargeInt chunk),
+                                      ((Prim.addTagCoerce shift) * acc)
+                                      + (Prim.addTagCoerce chunk),
                                       s')
                      else (acc, s)
                fun reader (s: 'a): (int * 'a) option =
@@ -208,7 +209,7 @@ structure IntInf: INT_INF_EXTRA =
                      NONE => NONE
                    | SOME ({more, chunk, ...}, s') =>
                         SOME (loop (more,
-                                    W.toLargeInt chunk,
+                                    Prim.addTagCoerce chunk,
                                     s'))
             in 
                reader
@@ -241,8 +242,7 @@ structure IntInf: INT_INF_EXTRA =
                     : (int, 'a) reader =
             let
                fun reader (s: 'a): (int * 'a) option =
-                  let val s = StringCvt.skipWS cread s in
-                  case cread s of
+                  case cread (StringCvt.skipWS cread s) of
                      NONE => NONE
                    | SOME (ch, s') =>
                        let
@@ -259,7 +259,6 @@ structure IntInf: INT_INF_EXTRA =
                                    | SOME (abs, s''') => SOME (~ abs, s''')
                              else uread s''
                        end
-                  end
             in
                reader
             end
@@ -332,4 +331,7 @@ structure IntInf: INT_INF_EXTRA =
                  fromLarge = fn {numLimbsMinusOne, mostSigLimbLog2} =>
                  Int.+ (Int.* (MPLimb.wordSize, SeqIndex.toInt numLimbsMinusOne),
                         Int32.toInt mostSigLimbLog2)}
+
+      val isSmall = Prim.isSmall
+      val areSmall = Prim.areSmall
    end

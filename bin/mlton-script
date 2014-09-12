@@ -12,24 +12,21 @@ case "$HOST_OS" in
 mingw)
 	exe='.exe'
 ;;
-hpux)
-        ia64hpux="-mlp64"
-;;
 *)
 	exe=''
 ;;
 esac
 mlton="$lib/mlton-compile$exe"
-
-smlnj='sml'
-if $smlnj -h >/dev/null 2>&1; then
-        smlnj_heap_suffix=`echo 'TextIO.output (TextIO.stdErr, SMLofNJ.SysInfo.getHeapSuffix ());' | $smlnj 2>&1 1> /dev/null`
-        mlton_smlnj_heap="$lib/mlton-smlnj.$smlnj_heap_suffix"
+world="$lib/world.mlton"
+nj='sml'
+# Try to use the SML/NJ .arch-n-opsys
+if .arch-n-opsys >/dev/null 2>&1; then
+        eval `.arch-n-opsys`
+        njHeap="$lib/mlton.$HEAP_SUFFIX"
+        unset `.arch-n-opsys | sed 's#=[^ ]*##g'`
 else
-        mlton_smlnj_heap=""
+        njHeap="$lib/mlton.$HOST_ARCH-$HOST_OS"
 fi
-
-mlton_polyml="$lib/mlton-polyml$exe"
 
 declare -a rargs
 case "$1" in
@@ -48,23 +45,13 @@ case "$1" in
         ;;
 esac
 
-doitMLton () {
-    exec "$mlton" @MLton ram-slop 0.5 "${rargs[@]}" -- "$@"
-}
-doitSMLNJ () {
-    exec "$smlnj" @SMLload="$mlton_smlnj_heap" "$@"
-}
-doitPolyML () {
-    exec "$mlton_polyml" "$@"
-}
-
+# If $mlton is executable and $world exists and is not older than
+# $njHeap (which exists), then use MLton, otherwise use SML/NJ.
 doit () {
-        if [ -x "$mlton" ]; then
-            doitMLton "$@"
-        elif [ -s "$mlton_smlnj_heap" ]; then
-            doitSMLNJ "$@"
-        elif [ -x "$mlton_polyml" ]; then
-            doitPolyML "$@"
+        if [ -x "$mlton" -a -s "$world" -a ! "$njHeap" -nt "$world" ]; then
+                exec "$mlton" @MLton load-world "$world" ram-slop 0.5 "${rargs[@]}" -- "$@"
+        elif [ -s "$njHeap" ]; then
+                exec "$nj" @SMLload="$njHeap" "$@"
         fi
         echo 'Unable to run MLton.  Check that lib is set properly.' >&2
         exit 1
@@ -100,13 +87,9 @@ doit "$lib" \
         -cc-opt '-O1 -fno-common'                                \
         -cc-opt '-fno-strict-aliasing -fomit-frame-pointer -w'   \
         -link-opt '-lm -lgmp'                                    \
-        -llvm-llc-opt '-O2'                                      \
-        -llvm-opt-opt '-mem2reg -O2'                             \
         -mlb-path-map "$lib/mlb-path-map"                        \
         -target-as-opt amd64 '-m64'                              \
         -target-as-opt x86 '-m32'                                \
-        -target-cc-opt alpha                                     \
-                '-mieee -mbwx -mtune=ev6 -mfp-rounding-mode=d'   \
         -target-cc-opt amd64 '-m64'                              \
         -target-cc-opt darwin                                    \
                 '-I/usr/local/include
@@ -116,24 +99,22 @@ doit "$lib" \
         -target-cc-opt netbsd '-I/usr/pkg/include'               \
         -target-cc-opt openbsd '-I/usr/local/include'            \
         -target-cc-opt aix '-maix64'                             \
-        -target-cc-opt ia64 "$ia64hpux -mtune=itanium2"          \
+        -target-cc-opt ia64 '-mlp64 -mtune=itanium2'             \
         -target-cc-opt sparc '-m32 -mcpu=v8 -Wa,-xarch=v8plusa'  \
         -target-cc-opt x86                                       \
                 '-m32
                 -fno-strength-reduce
                 -fschedule-insns
                 -fschedule-insns2
-                -falign-functions=5
-                -falign-jumps=2
-                -falign-loops=2'                                 \
+                -malign-functions=5
+                -malign-jumps=2
+                -malign-loops=2'                                 \
         -target-link-opt amd64 '-m64'                            \
-        -target-link-opt alpha                                   \
-                '-mieee -mbwx -mtune=ev6 -mfp-rounding-mode=d'   \
-        -target-link-opt darwin "$darwinLinkOpts"                \
-        -target-link-opt freebsd '-L/usr/local/lib/'             \
+        -target-link-opt darwin "$darwinLinkOpts -pthread"       \
+        -target-link-opt freebsd '-L/usr/local/lib/ -lpthread' 	 \
+        -target-link-opt linux '-lplpa_included -pthread -lrt'   \
         -target-link-opt aix '-maix64'                           \
-        -target-link-opt ia64 "$ia64hpux"                        \
-        -target-link-opt linux '-Wl,-znoexecstack'               \
+        -target-link-opt ia64 '-mlp64'                           \
         -target-link-opt mingw                                   \
                 '-lws2_32 -lkernel32 -lpsapi -lnetapi32 -lwinmm' \
         -target-link-opt mingw '-Wl,--enable-stdcall-fixup'      \

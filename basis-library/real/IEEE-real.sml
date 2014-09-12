@@ -1,5 +1,4 @@
-(* Copyright (C) 2012 Matthew Fluet.
- * Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -24,6 +23,27 @@ structure IEEEReal: IEEE_REAL_EXTRA =
        | NORMAL
        | SUBNORMAL
        | ZERO
+
+      fun mkClass class x =
+         let
+            val i = class x
+            open Prim.FloatClass
+         in
+            (* order here is chosen based on putting the more
+             * commonly used classes at the front.  
+             *)
+            if i = FP_NORMAL
+               then NORMAL
+            else if i = FP_ZERO
+               then ZERO
+            else if i = FP_INFINITE
+               then INF
+            else if i = FP_NAN
+               then NAN
+            else if i = FP_SUBNORMAL
+               then SUBNORMAL
+            else raise Fail "Real_class returned bogus integer"
+         end
 
       structure RoundingMode =
          struct
@@ -66,12 +86,7 @@ structure IEEEReal: IEEE_REAL_EXTRA =
 
       datatype rounding_mode = datatype RoundingMode.t
 
-      fun setRoundingMode (m: rounding_mode): unit =
-          if Prim.setRoundingMode (RoundingMode.toInt m) = 0
-             then ()
-          else
-             raise PosixError.raiseSys PosixError.inval
-
+      val setRoundingMode = Prim.setRoundingMode o RoundingMode.toInt
       val getRoundingMode = RoundingMode.fromInt o Prim.getRoundingMode
 
       fun withRoundingMode (m: rounding_mode, th: unit -> 'a): 'a =

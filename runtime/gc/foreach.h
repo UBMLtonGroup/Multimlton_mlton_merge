@@ -12,12 +12,12 @@ typedef void (*GC_foreachObjptrFun) (GC_state s, objptr *opp);
 
 static inline void callIfIsObjptr (GC_state s, GC_foreachObjptrFun f, objptr *opp);
 /* foreachGlobalObjptr (s, f)
- * 
- * Apply f to each global object pointer into the heap. 
+ *
+ * Apply f to each global object pointer into the heap.
  */
 static inline void foreachGlobalObjptr (GC_state s, GC_foreachObjptrFun f);
-/* foreachObjptrInObject (s, p, skipWeaks, f) 
- * 
+/* foreachObjptrInObject (s, p, skipWeaks, f)
+ *
  * Applies f to each object pointer in the object pointed to by p.
  * Returns pointer to the end of object, i.e. just past object.
  *

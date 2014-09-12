@@ -73,34 +73,31 @@ int mkstemp (char *template) {
 #define EPOCHFILETIME (116444736000000000LL)
 #endif
 
-/* The basic plan is to get an initial time using GetSystemTime
+/* Based on notes by Wu Yongwei and IBM:
+ *   http://mywebpage.netscape.com/yongweiwutime.htm
+ *   http://www.ibm.com/developerworks/library/i-seconds/
+ *
+ * The basic plan is to get an initial time using GetSystemTime
  * that is good up to ~10ms accuracy. From then on, we compute
  * using deltas with the high-resolution (> microsecond range)
  * performance timers. A 64-bit accumulator holds microseconds
  * since (*nix) epoch. This is good for over 500,000 years before
- * wrap-around becomes a concern.
- *
- * However, we might need to watch out for wrap-around with the
- * QueryPerformanceCounter, because it could be measuring at a higher
- * frequency than microseconds.
- *
- * This function only strives to allow a program to run for
- * 100 years without being restarted.
+ * wrap-around becomes a concern. However, we do need to watch
+ * out for wrap-around with the QueryPerformanceCounter, because
+ * it could be measuring at a higher frequency than microseconds.
  */
 int gettimeofday (struct timeval *tv,
                   __attribute__ ((unused)) struct timezone *tz) {
-        static LARGE_INTEGER frequency;        /* ticks/second */
-        static LARGE_INTEGER baseCounter;      /* ticks since last rebase */
-        static LARGE_INTEGER baseMicroSeconds; /* unix time at last rebase */
+        static LARGE_INTEGER frequency;
+        static LARGE_INTEGER baseCounter;
+        static LARGE_INTEGER microSeconds; /* static vars start = 0 */
 
-        LARGE_INTEGER nowCounter;
         LARGE_INTEGER deltaCounter;
         LARGE_INTEGER nowMicroSeconds;
-        double deltaMicroseconds;
 
-        /* This code is run the first time gettimeofday is called. */
-        if (frequency.QuadPart == 0) {
+        if (microSeconds.QuadPart == 0) {
                 FILETIME ft;
+
                 /* tzset prepares the localtime function. I don't
                  * really understand why it's here and not there,
                  * but this has been the case since before svn logs.
@@ -108,72 +105,37 @@ int gettimeofday (struct timeval *tv,
                  */
                 tzset();
 
+                GetSystemTimeAsFileTime (&ft);
                 QueryPerformanceCounter(&baseCounter);
                 QueryPerformanceFrequency(&frequency);
                 if (frequency.QuadPart == 0)
                         die("no high resolution clock");
 
-                GetSystemTimeAsFileTime (&ft);
-                baseMicroSeconds.LowPart = ft.dwLowDateTime;
-                baseMicroSeconds.HighPart = ft.dwHighDateTime;
-                baseMicroSeconds.QuadPart -= EPOCHFILETIME;
-                baseMicroSeconds.QuadPart /= 10; /* 100ns -> 1ms */
+                microSeconds.LowPart = ft.dwLowDateTime;
+                microSeconds.HighPart = ft.dwHighDateTime;
+                microSeconds.QuadPart -= EPOCHFILETIME;
+                microSeconds.QuadPart /= 10; /* 100ns -> 1ms */
         }
-        
-        /* Use the high res counter ticks to calculate the delta. 
-         * A double has 52+1 bits of precision. This means it can fit
-         * deltas of up to 9007199254 seconds, or 286 years. We could
-         * rebase before an overflow, but 286 is already > 100.
-         */
-        QueryPerformanceCounter(&nowCounter);
-        deltaCounter.QuadPart = nowCounter.QuadPart - baseCounter.QuadPart;
-        deltaMicroseconds = deltaCounter.QuadPart;
-        deltaMicroseconds /= frequency.QuadPart;
-        deltaMicroseconds *= 1000000.0;
-        nowMicroSeconds.QuadPart = 
-                baseMicroSeconds.QuadPart + deltaMicroseconds;
-        
-        /* If the frequency too fast, we need to check for wrap around.
-         * 2**32 seconds is 136 years, so if HighPart == 0 we don't need to
-         * waste a system call on GetSystemTimeAsFileTime.
-         */
-        if (frequency.HighPart != 0) {
-                LARGE_INTEGER nowLowResMicroSeconds;
-                FILETIME ft;
-                
-                /* Use low res timer to detect performance counter wrap-around. */
-                GetSystemTimeAsFileTime (&ft);
-                nowLowResMicroSeconds.LowPart = ft.dwLowDateTime;
-                nowLowResMicroSeconds.HighPart = ft.dwHighDateTime;
-                nowLowResMicroSeconds.QuadPart -= EPOCHFILETIME;
-                nowLowResMicroSeconds.QuadPart /= 10;
-                
-                /* If deltaMicroseconds deviates by more than a second from the low
-                 * resolution timer, assume the high performance counter has wrapped.
-                 * One second is a safe margin b/c QueryPerformanceFrequency must fit
-                 * in a 64-bit integer. Therefore any wrap must exceed one second.
-                 */
-                if (nowMicroSeconds.QuadPart + 1000000 <  nowLowResMicroSeconds.QuadPart) {
-                        baseCounter = nowCounter;
-                        baseMicroSeconds = nowLowResMicroSeconds;
-                        nowMicroSeconds = nowLowResMicroSeconds;
-                }
-                
-                /* The above wrap-around detection destroys high resolution timing.
-                 * However, if one needs high resolution timing, then one is querying
-                 * gettimeofday quite often. Therefore, rebase the clock before any
-                 * wrap around troubles happen. We don't do this too often as it 
-                 * introduces clock drift.
-                 */
-                if ((deltaCounter.HighPart & 0xffff0000UL) != 0) {
-                        baseCounter = nowCounter;
-                        baseMicroSeconds = nowMicroSeconds;
-                }
-        }
-        
+
+        QueryPerformanceCounter(&deltaCounter);
+        deltaCounter.QuadPart -= baseCounter.QuadPart;
+        nowMicroSeconds = microSeconds;
+        nowMicroSeconds.QuadPart +=
+                1000000 * deltaCounter.QuadPart / frequency.QuadPart;
+
         tv->tv_sec = (long)(nowMicroSeconds.QuadPart / 1000000);
         tv->tv_usec = (long)(nowMicroSeconds.QuadPart % 1000000);
-        
+
+        /* Watch out for wrap-around in the PerformanceCounter.
+         * We expect the delta * 1000000 to fit inside a 64 bit integer.
+         * To be safe, we will rebase the clock whenever it exceeds 32 bits.
+         * We don't want to rebase all the time because it introduces drift.
+         */
+        if (nowMicroSeconds.HighPart != 0) {
+                microSeconds = nowMicroSeconds;
+                baseCounter.QuadPart += deltaCounter.QuadPart;
+        }
+
         return 0;
 }
 
@@ -330,7 +292,7 @@ int setitimer (int which,
 
 }
 
-static void catcher(__attribute__ ((unused)) int signo) {
+static void catcher(__attribute__ ((unused)) int sig) {
         CONTEXT context;
         context.ContextFlags = CONTEXT_CONTROL;
 
@@ -534,6 +496,10 @@ int link (__attribute__ ((unused)) const char *oldpath,
 int lstat (const char *file_name, struct stat *buf) {
         /* Win32 doesn't really have links. */
         return stat (file_name, buf);
+}
+
+int mkdir2 (const char *pathname, mode_t mode) {
+        return mkdir (pathname, mode);
 }
 
 __attribute__ ((noreturn))
@@ -763,73 +729,25 @@ static void setMachine (struct utsname *buf) {
 }
 
 static void setSysname (struct utsname *buf) {
-        OSVERSIONINFOEX osv;
+        OSVERSIONINFO osv;
         const char* os = "??";
 
-#ifndef _WIN64
-        /* Call GetNativeSystemInfo if supported or GetSystemInfo otherwise. */
-        SYSTEM_INFO si;
-        void (WINAPI *pGNSI)(LPSYSTEM_INFO);
-        pGNSI = (void(WINAPI *)(LPSYSTEM_INFO))
-                GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")),
-                               "GetNativeSystemInfo");
-        if (NULL != pGNSI)
-          pGNSI(&si);
-        else
-          GetSystemInfo(&si);
-#endif
-
         osv.dwOSVersionInfoSize = sizeof (osv);
-        /* Try to get extended information in order to be able to match the O.S. more
-           precisely using osv.wProductType */
-        if (! GetVersionEx ((OSVERSIONINFO *)(void*) &osv)) {
-          ZeroMemory(&osv, sizeof(OSVERSIONINFOEX));
-          osv.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-          GetVersionEx((OSVERSIONINFO *)(void*) &osv);
-        }
+        GetVersionEx (&osv);
         switch (osv.dwPlatformId) {
         case VER_PLATFORM_WIN32_NT:
-#ifdef _WIN64
                 if (osv.dwMinorVersion == 0) {
-                  if (osv.dwMajorVersion <= 6) {
-                    if (osv.wProductType == VER_NT_WORKSTATION)
-                                                          os = "Vista_64";
-                    else
-                                                          os = "2008_64";
-                  } else                                  os = "NTx_64";
-                } else if (osv.dwMinorVersion <= 2)       os = "XP_64";
-                else                                      os = "NTx_64";
-#else
-                if (osv.dwMinorVersion == 0) {
-                        if (osv.dwMajorVersion <= 4)      os = "NT";
-                        else if (osv.dwMajorVersion <= 5) os = "2000";
-                        else {
-                          if (osv.wProductType == VER_NT_WORKSTATION) {
-                            if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64)
-                                                          os = "Vista_WOW64";
-                            else
-                                                          os = "Vista";
-                          } else {
-                            if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64)
-                                                          os = "2008";
-                            else
-                                                          os = "2008_WOW64";
-                          }
-                        }
-                } else if (osv.dwMinorVersion <= 1)       os = "XP";
-                else if (osv.dwMinorVersion <= 2) {
-                  if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64)
-                                                          os = "XP_WOW64";
-                  else
-                                                          os = "2003";
-                } else                                    os = "NTx";
-#endif
+                        if (osv.dwMajorVersion <= 4)    os = "NT";
+                        else                            os = "2000";
+                } else if (osv.dwMinorVersion <= 1)     os = "XP";
+                else if (osv.dwMinorVersion <= 2)       os = "2003";
+                else                                    os = "NTx";
                 break;
         case VER_PLATFORM_WIN32_WINDOWS:
-                if (osv.dwMinorVersion == 0)              os = "95";
-                else if (osv.dwMinorVersion < 90)         os = "98";
-                else if (osv.dwMinorVersion == 90)        os = "Me";
-                else                                      os = "9X";
+                if (osv.dwMinorVersion == 0)            os = "95";
+                else if (osv.dwMinorVersion < 90)       os = "98";
+                else if (osv.dwMinorVersion == 90)      os = "Me";
+                else                                    os = "9X";
                 break;
         case VER_PLATFORM_WIN32s:
                 os = "31"; /* aka DOS + Windows 3.1 */
@@ -855,8 +773,8 @@ int uname (struct utsname *buf) {
                 strcpy (buf->nodename, "unknown");
         }
 #ifdef _WIN64
-        sprintf (buf->release, "%d", __MINGW64_VERSION_MINOR);
-        sprintf (buf->version, "%d", __MINGW64_VERSION_MAJOR);
+        sprintf (buf->release, "%d", MINGW64_VERSION_MINOR);
+        sprintf (buf->version, "%d", MINGW64_VERSION_MAJOR);
 #else
         sprintf (buf->release, "%d", __MINGW32_MINOR_VERSION);
         sprintf (buf->version, "%d", __MINGW32_MAJOR_VERSION);
@@ -882,13 +800,11 @@ int fork (void) {
         die ("fork not implemented");
 }
 
-int kill (pid_t pid, int sig) {
-        HANDLE h = (HANDLE)pid;
-        unless (TerminateProcess (h, SIGNALLED_BIT | sig)) {
-                errno = ECHILD;
-                return -1;
-        }
-        return 0;
+
+__attribute__ ((noreturn))
+int kill (__attribute__ ((unused)) pid_t pid,
+          __attribute__ ((unused)) int sig) {
+        die ("kill not implemented");
 }
 
 int nanosleep (const struct timespec *req, struct timespec *rem) {
@@ -913,31 +829,11 @@ pid_t wait (__attribute__ ((unused)) int *status) {
         die ("wait not implemented");
 }
 
-pid_t waitpid (pid_t pid, int *status, int options) {
-        HANDLE h;
-        DWORD delay;
-
-        /* pid <= 0 is handled in stub-mingw.sml */
-        h = (HANDLE)pid;
-
-        delay = ((options & WNOHANG) != 0) ? 0 : INFINITE;
-
-        switch (WaitForSingleObject (h, delay)) {
-        case WAIT_OBJECT_0: /* process has exited */
-                break;
-        case WAIT_TIMEOUT:  /* process has not exited */
-                return 0;
-        default:            /* some sort of error */
-                errno = ECHILD;
-                return -1;
-        }
-
-        unless (GetExitCodeProcess (h, (DWORD*)status)) {
-                errno = ECHILD;
-                return -1;
-        }
-
-        return pid;
+__attribute__ ((noreturn))
+pid_t waitpid (__attribute__ ((unused)) pid_t pid,
+               __attribute__ ((unused)) int *status,
+               __attribute__ ((unused)) int options) {
+        die ("waitpid not implemented");
 }
 
 /* ------------------------------------------------- */
@@ -1188,6 +1084,18 @@ int tcsetpgrp (__attribute__ ((unused)) int fd,
 }
 
 /* ------------------------------------------------- */
+/*                      Process                      */
+/* ------------------------------------------------- */
+
+C_PId_t MLton_Process_cwait (C_PId_t pid, Pointer status) {
+        HANDLE h;
+
+        h = (HANDLE)pid;
+        /* -1 on error, the casts here are due to bad types on both sides */
+        return _cwait ((int*)status, (_pid_t)h, 0);
+}
+
+/* ------------------------------------------------- */
 /*                      Socket                       */
 /* ------------------------------------------------- */
 
@@ -1218,196 +1126,6 @@ void MLton_initSockets (void) {
         }
 }
 
-/* This table was constructed with help of 
- *   http://msdn.microsoft.com/en-us/library/ms740668(VS.85).aspx#winsock.wsaenotsock_2
- *   man errno(3)
- */
-void MLton_fixSocketErrno (void) {
-        int status = WSAGetLastError ();
-        
-        switch (status) {
-        case 0:                  errno = 0;               break;
-        case WSAEINTR:           errno = EINTR;           break;
-        case WSAEBADF:           errno = EBADF;           break;
-        case WSAEACCES:          errno = EACCES;          break;
-        case WSAEFAULT:          errno = EFAULT;          break;
-        case WSAEINVAL:          errno = EINVAL;          break;
-        case WSAEMFILE:          errno = EMFILE;          break;
-        case WSAEWOULDBLOCK:     errno = EWOULDBLOCK;     break;
-        case WSAEINPROGRESS:     errno = EINPROGRESS;     break;
-        case WSAEALREADY:        errno = EALREADY;        break;
-        case WSAENOTSOCK:        errno = ENOTSOCK;        break;
-        case WSAEDESTADDRREQ:    errno = EDESTADDRREQ;    break;
-        case WSAEMSGSIZE:        errno = EMSGSIZE;        break;
-        case WSAEPROTOTYPE:      errno = EPROTOTYPE;      break;
-        case WSAENOPROTOOPT:     errno = ENOPROTOOPT;     break;
-        case WSAEPROTONOSUPPORT: errno = EPROTONOSUPPORT; break;
-        case WSAESOCKTNOSUPPORT: errno = ESOCKTNOSUPPORT; break;
-        case WSAEOPNOTSUPP:      errno = EOPNOTSUPP;      break;
-        case WSAEPFNOSUPPORT:    errno = EPFNOSUPPORT;    break;
-        case WSAEAFNOSUPPORT:    errno = EAFNOSUPPORT;    break;
-        case WSAEADDRINUSE:      errno = EADDRINUSE;      break;
-        case WSAEADDRNOTAVAIL:   errno = EADDRNOTAVAIL;   break;
-        case WSAENETDOWN:        errno = ENETDOWN;        break;
-        case WSAENETUNREACH:     errno = ENETUNREACH;     break;
-        case WSAENETRESET:       errno = ENETRESET;       break;
-        case WSAECONNABORTED:    errno = ECONNABORTED;    break;
-        case WSAECONNRESET:      errno = ECONNRESET;      break;
-        case WSAENOBUFS:         errno = ENOBUFS;         break;
-        case WSAEISCONN:         errno = EISCONN;         break;
-        case WSAENOTCONN:        errno = ENOTCONN;        break;
-        case WSAESHUTDOWN:       errno = ESHUTDOWN;       break;
-        case WSAETIMEDOUT:       errno = ETIMEDOUT;       break;
-        case WSAECONNREFUSED:    errno = ECONNREFUSED;    break;
-        case WSAELOOP:           errno = ELOOP;           break;
-        case WSAENAMETOOLONG:    errno = ENAMETOOLONG;    break;
-        case WSAEHOSTDOWN:       errno = EHOSTDOWN;       break;
-        case WSAEHOSTUNREACH:    errno = EHOSTUNREACH;    break;
-        case WSAENOTEMPTY:       errno = ENOTEMPTY;       break;
-        case WSAEDQUOT:          errno = EDQUOT;          break;
-        case WSAESTALE:          errno = ESTALE;          break;
-        case WSAEREMOTE:         errno = EREMOTE;         break;
-        /* These codes appear to have a matching name, but the manual
-         * descriptions of what the error codes mean seem to differ
-         */
-        case WSAEUSERS:          errno = EUSERS;          break;
-        case WSAECANCELLED:      errno = ECANCELED;       break;
-        case WSA_E_CANCELLED:    errno = ECANCELED;       break;
-        /* These codes have no matching code in the errno(3) man page. */
-        case WSAEPROCLIM:        errno = EBUSY;           break;
-        case WSAETOOMANYREFS:    errno = ENOMEM;          break;
-        case WSAEDISCON:         errno = ESHUTDOWN;       break;
-        case WSA_E_NO_MORE:
-        case WSAENOMORE:
-        case WSASYSCALLFAILURE:  errno = EIO;             break;
-        /* These codes are returned from the OS and subject to chage */
-        // WSA_INVALID_HANDLE
-        // WSA_NOT_ENOUGH_MEMORY
-        // WSA_INVALID_PARAMETER
-        // WSA_OPERATION_ABORTED
-        // WSA_IO_INCOMPLETE
-        // WSA_IO_PENDING
-        /* These codes mean some sort of windows specific fatal error */
-        case WSASYSNOTREADY: 
-        case WSAVERNOTSUPPORTED:
-        case WSANOTINITIALISED:
-        case WSAEINVALIDPROCTABLE:
-        case WSAEINVALIDPROVIDER:
-        case WSAEPROVIDERFAILEDINIT:
-        case WSASERVICE_NOT_FOUND:
-        case WSATYPE_NOT_FOUND:
-                                 die("Problem loading winsock");
-        case WSAEREFUSED:
-        case WSAHOST_NOT_FOUND:
-        case WSATRY_AGAIN:
-        case WSANO_RECOVERY:
-        case WSANO_DATA:
-                                 die("Strange winsock specific status code");
-        default:
-                                 die("Unknown winsock status code");
-        }
-}
-
-static const char *MLton_strerrorExtension(int code) {
-        switch (code) {
-        case EINTR:           return "Interrupted function call";
-        case EBADF:           return "Bad file descriptor";
-        case EACCES:          return "Permission denied";
-        case EFAULT:          return "Bad address";
-        case EINVAL:          return "Invalid argument";
-        case EMFILE:          return "Too many open files";
-        case EAGAIN:          return "Resource temporarily unavailable";
-        case EINPROGRESS:     return "Operation in progress";
-        case EALREADY:        return "Connection already in progress";
-        case ENOTSOCK:        return "Not a socket";
-        case EDESTADDRREQ:    return "Destination address required";
-        case EMSGSIZE:        return "Message too long";
-        case EPROTOTYPE:      return "Protocol wrong type for socket";
-        case ENOPROTOOPT:     return "Protocol not available";
-        case EPROTONOSUPPORT: return "Protocol not supported";
-        case ESOCKTNOSUPPORT: return "Socket type not supported";
-        case EOPNOTSUPP:      return "Operation not supported on socket";
-        case EPFNOSUPPORT:    return "Protocol family not supported";
-        case EAFNOSUPPORT:    return "Address family not supported";
-        case EADDRINUSE:      return "Address already in use";
-        case EADDRNOTAVAIL:   return "Address not available";
-        case ENETDOWN:        return "Network is down";
-        case ENETUNREACH:     return "Network unreachable";
-        case ENETRESET:       return "Connection aborted by network";
-        case ECONNABORTED:    return "Connection aborted";
-        case ECONNRESET:      return "Connection reset";
-        case ENOBUFS:         return "No buffer space available";
-        case EISCONN:         return "Socket is connected";
-        case ENOTCONN:        return "The socket is not connected";
-        case ESHUTDOWN:       return "Cannot send after transport endpoint shutdown";
-        case ETIMEDOUT:       return "Connection timed out";
-        case ECONNREFUSED:    return "Connection refused";
-        case ELOOP:           return "Too many levels of symbolic links";
-        case ENAMETOOLONG:    return "Filename too long";
-        case EHOSTDOWN:       return "Host is down";
-        case EHOSTUNREACH:    return "Host is unreachable";
-        case ENOTEMPTY:       return "Directory not empty";
-        case EDQUOT:          return "Disk quota exceeded";
-        case ESTALE:          return "Stale file handle";
-        case EREMOTE:         return "Object is remote";
-        case EUSERS:          return "Too many users";
-        case ECANCELED:       return "Operation canceled";
-        default:              return "Unknown error";
-        }
-}
-
-/* MinGW strerror works for all system-defined errno values.
- * However, platform/mingw.h adds some missing POSIX networking error codes.
- * It defines these codes as their closest-equivalent winsock error code.
- * To report network errors, MLton_fixSocketErrno maps winsock errors to 
- * their closest POSIX errno value.
- * 
- * This function must handle the winsock errno values we have added.
- * FormatMessage doesn't return the POSIX string for errors, and it uses
- * the current locale's language. The MinGW strerror is always English.
- * 
- * Thus, we just make a big English table to augment strerror.
- * The descriptions are taken from man errno(3).
- */
-char *MLton_strerror(int code) {
-        static char buffer[80];
-        
-#undef strerror
-        if (code < sys_nerr) return strerror(code);
-#define strerror MLton_strerror
-
-        strcpy(buffer, MLton_strerrorExtension(code));
-        return buffer;
-}
-
-int MLton_recv(int s, void *buf, int len, int flags) {
-        int ret, status = 0;
-        
-        if (flags & MSG_DONTWAIT) MinGW_setNonBlock(s);
-        ret = recv(s, buf, len, flags & ~MSG_DONTWAIT);
-        
-        /* We need to preserve the error status across non-blocking call */
-        if (ret == -1) status = WSAGetLastError();
-        if (flags & MSG_DONTWAIT) MinGW_clearNonBlock(s);
-        if (ret == -1) WSASetLastError(status);
-        
-        return ret;
-}
-
-int MLton_recvfrom(int s, void *buf, int len, int flags, void *from,
-                   socklen_t *fromlen) {
-        int ret, status = 0;
-        
-        if (flags & MSG_DONTWAIT) MinGW_setNonBlock(s);
-        ret = recvfrom(s, buf, len, flags & ~MSG_DONTWAIT, from, fromlen);
-        
-        /* We need to preserve the error status across non-blocking call */
-        if (ret == -1) status = WSAGetLastError();
-        if (flags & MSG_DONTWAIT) MinGW_clearNonBlock(s);
-        if (ret == -1) WSASetLastError(status);
-        
-        return ret;
-}
 /* ------------------------------------------------- */
 /*                      Syslog                       */
 /* ------------------------------------------------- */
@@ -1457,14 +1175,4 @@ void syslog(int priority, __attribute__ ((unused)) const char* fmt, const char* 
 
 C_Size_t MinGW_getTempPath(C_Size_t buf_size, Array(Char8_t) buf) {
         return GetTempPath(buf_size, (char*)buf);
-}
-
-void MinGW_setNonBlock(C_Fd_t fd) {
-        unsigned long yes = 1;
-        ioctlsocket(fd, FIONBIO, &yes);
-}
-
-void MinGW_clearNonBlock(C_Fd_t fd) {
-        unsigned long no = 0;
-        ioctlsocket(fd, FIONBIO, &no);
 }

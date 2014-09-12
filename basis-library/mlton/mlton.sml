@@ -1,5 +1,4 @@
-(* Copyright (C) 2010,2013 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -40,7 +39,15 @@ fun size x =
 val debug = Primitive.Controls.debug
 val eq = Primitive.MLton.eq
 val equal = Primitive.MLton.equal
-val hash = Primitive.MLton.hash
+
+local
+   fun hash_param depth x =
+      if Int.< (depth, 0)
+         then raise Domain
+      else Primitive.MLton.hash (SeqIndex.fromInt depth, x)
+in
+   fun hash x = hash_param 0xF x
+end
 (* val errno = Primitive.errno *)
 val safe = Primitive.Controls.safe
 
@@ -74,6 +81,7 @@ structure LargeWord =
       open LargeWord
       type t = word
    end
+structure Pacml = MLtonPacml
 structure Platform = MLtonPlatform
 structure Pointer = MLtonPointer
 structure ProcEnv = MLtonProcEnv
@@ -81,26 +89,27 @@ structure Process = MLtonProcess
 (* structure Ptrace = MLtonPtrace *)
 structure Profile = MLtonProfile
 structure Random = MLtonRandom
-structure Real = 
+structure Real =
    struct
       open Real
       type t = real
    end
-structure Real32 = 
+structure Real32 =
    struct
       open Real32
       type t = real
       open Primitive.PackReal32
    end
-structure Real64 = 
+structure Real64 =
    struct
-      open Real64 
+      open Real64
       type t = real
       open Primitive.PackReal64
    end
 structure Rlimit = MLtonRlimit
 structure Rusage = MLtonRusage
 structure Signal = MLtonSignal
+structure Socket = MLtonSocket
 structure Syslog = MLtonSyslog
 structure TextIO = MLtonIO (TextIO)
 structure Thread = MLtonThread
@@ -141,7 +150,7 @@ structure Word8Vector = struct
    type t = vector
 end
 
-val _ = 
+val _ =
    (Primitive.TopLevel.setHandler MLtonExn.defaultTopLevelHandler
     ; Primitive.TopLevel.setSuffix Exit.defaultTopLevelSuffix)
 end

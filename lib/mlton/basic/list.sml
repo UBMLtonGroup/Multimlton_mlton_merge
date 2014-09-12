@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -10,6 +9,8 @@ structure List: LIST =
 struct
 
 structure Int = Pervasive.Int
+type int = Int.int
+
 structure F =
    struct
       type 'a t = 'a list
@@ -218,7 +219,7 @@ fun unzip l = foldr (l, ([], []), fn ((x1, x2), (l1, l2)) =>
 
 fun concatRev l = fold (l, [], append)
 
-fun concat l = concatRev (rev l) 
+fun concat l = concatRev (rev l)
 
 fun concatMap (l, f) = concatRev (revMap (l, f))
 
@@ -348,7 +349,7 @@ fun 'a ordered {<= : 'a * 'a -> bool} =
               if x <= y then (left, cons (y, right))
               else (cons (y, left), right))
 
-      local  
+      local
          val columnSize: int = 5
          val sort = insertionSort
          fun breakIntoColumns ns =
@@ -372,7 +373,7 @@ fun 'a ordered {<= : 'a * 'a -> bool} =
                  end
          and columnMedian ns =
             nth (sort ns, Int.quot (length ns, 2))
-      end    
+      end
 
       fun choose (op <) (s, n) =
          let fun insert (x, s) =
@@ -516,7 +517,7 @@ fun appendMap (l1, f, l2) = appendRev (revMap (l1, f), l2)
 fun separate (ts, s) =
    case ts of
       [] => []
-    | t :: ts => t :: (let 
+    | t :: ts => t :: (let
                            val rec loop =
                               fn [] => []
                                | t :: ts => s :: t:: (loop ts)
@@ -619,3 +620,5 @@ fun equivalence (l, p) =
        loop (ecs, [])
     end)
 end
+
+val length = List.length

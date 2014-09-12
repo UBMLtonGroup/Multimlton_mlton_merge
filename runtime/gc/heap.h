@@ -1,5 +1,4 @@
-/* Copyright (C) 2012 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -12,7 +11,7 @@
 /*
  * All ML objects (including ML execution stacks) are allocated in a
  * contiguous heap.  The heap has the following general layout:
- * 
+ *
  *  -------------------------------------------------------------------------
  *  |    old generation    |               |  nursery  | cardMap | crossMap |
  *  -------------------------------------------------------------------------
@@ -24,6 +23,9 @@
 */
 
 typedef struct GC_heap {
+  size_t availableSize; /* may be smaller than size if we are limiting
+                           allocation for profiling purposes */
+  pointer frontier; /* next (globally) unallocated space */
   pointer nursery; /* start of nursery */
   size_t oldGenSize; /* size of old generation */
   size_t size; /* size of heap */
@@ -37,15 +39,14 @@ typedef struct GC_heap {
 
 #if (defined (MLTON_GC_INTERNAL_FUNCS))
 
+static inline bool isPointerInHeap (GC_state s, pointer p);
 static inline bool isPointerInOldGen (GC_state s, pointer p);
 static inline bool isPointerInNursery (GC_state s, pointer p);
-#if ASSERT
+static inline bool isPointerInFromSpace (GC_state s, pointer p);
+static inline bool isObjptrInHeap (GC_state s, objptr op);
 static inline bool isObjptrInOldGen (GC_state s, objptr op);
-#endif
 static inline bool isObjptrInNursery (GC_state s, objptr op);
-#if ASSERT
 static inline bool isObjptrInFromSpace (GC_state s, objptr op);
-#endif
 static inline bool hasHeapBytesFree (GC_state s, size_t oldGen, size_t nursery);
 static inline bool isHeapInit (GC_heap h);
 

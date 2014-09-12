@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -1153,8 +1152,8 @@ struct
                      val c_stackP = x86MLton.c_stackPContentsOperand
                      val c_stackPDerefFloat = x86MLton.c_stackPDerefFloatOperand
                      val c_stackPDerefDouble = x86MLton.c_stackPDerefDoubleOperand
-                     val applyFFTempFun = x86MLton.applyFFTempFunContentsOperand
-                     val applyFFTempArg = x86MLton.applyFFTempArgContentsOperand
+                     val applyFFTemp = x86MLton.applyFFTempContentsOperand
+                     val applyFFTemp2 = x86MLton.applyFFTemp2ContentsOperand
                      val (fptrArg, args) =
                         case target of 
                            Direct _ => (AppendList.empty, args)
@@ -1168,7 +1167,7 @@ struct
                                  (AppendList.single
                                   (Assembly.instruction_mov
                                    {src = #1 fptrArg,
-                                    dst = applyFFTempFun,
+                                    dst = applyFFTemp2,
                                     size = #2 fptrArg}),
                                   args)
                               end
@@ -1207,12 +1206,12 @@ struct
                                    then (AppendList.fromList
                                          [Assembly.instruction_movx
                                           {oper = Instruction.MOVZX,
-                                           dst = applyFFTempArg,
+                                           dst = applyFFTemp,
                                            src = arg,
                                            dstsize = wordSize,
                                            srcsize = size},
                                           Assembly.instruction_ppush
-                                          {src = applyFFTempArg,
+                                          {src = applyFFTemp,
                                            base = c_stackP,
                                            size = wordSize}],
                                          Size.toBytes wordSize)
@@ -1441,7 +1440,7 @@ struct
                               AppendList.fromList
                               [Assembly.directive_ccall (),
                                Assembly.instruction_call
-                               {target = applyFFTempFun,
+                               {target = applyFFTemp2,
                                 absolute = true}]
                      val kill
                        = if isSome frameInfo

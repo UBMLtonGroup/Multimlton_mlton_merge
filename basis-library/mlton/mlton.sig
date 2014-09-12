@@ -1,5 +1,4 @@
-(* Copyright (C) 2013 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -44,13 +43,14 @@ signature MLTON =
       structure Itimer: MLTON_ITIMER
       structure LargeReal: MLTON_REAL
       structure LargeWord: MLTON_WORD
+      structure Pacml: MLTON_PACML
       structure Platform: MLTON_PLATFORM
       structure Pointer: MLTON_POINTER
       structure ProcEnv: MLTON_PROC_ENV
       structure Process: MLTON_PROCESS
       structure Profile: MLTON_PROFILE
 (*      structure Ptrace: MLTON_PTRACE *)
-      structure Random: MLTON_RANDOM 
+      structure Random: MLTON_RANDOM
       structure Real: MLTON_REAL
       structure Real32: sig
                            include MLTON_REAL
@@ -65,6 +65,7 @@ signature MLTON =
       structure Rlimit: MLTON_RLIMIT
       structure Rusage: MLTON_RUSAGE
       structure Signal: MLTON_SIGNAL
+      structure Socket: MLTON_SOCKET
       structure Syslog: MLTON_SYSLOG
       structure TextIO: MLTON_TEXT_IO
       structure Thread: MLTON_THREAD

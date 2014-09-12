@@ -1,5 +1,4 @@
-/* Copyright (C) 2011-2012 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,7 +6,6 @@
  * See the file MLton-LICENSE for details.
  */
 
-#if ASSERT
 void assertIsObjptrInFromSpace (GC_state s, objptr *opp) {
   assert (isObjptrInFromSpace (s, *opp));
   unless (isObjptrInFromSpace (s, *opp))
@@ -20,8 +18,8 @@ void assertIsObjptrInFromSpace (GC_state s, objptr *opp) {
    * for stacks, the card containing the beginning of the stack is
    * marked, but any remaining cards aren't.
    */
-  if (FALSE and s->mutatorMarksCards 
-      and isPointerInOldGen (s, (pointer)opp) 
+  if (FALSE and s->mutatorMarksCards
+      and isPointerInOldGen (s, (pointer)opp)
       and isObjptrInNursery (s, *opp)
       and not isCardMarked (s, (pointer)opp)) {
     displayGCState (s, stderr);
@@ -30,7 +28,9 @@ void assertIsObjptrInFromSpace (GC_state s, objptr *opp) {
   }
 }
 
+#if ASSERT
 bool invariantForGC (GC_state s) {
+  int proc;
   if (DEBUG)
     fprintf (stderr, "invariantForGC\n");
   /* Frame layouts */
@@ -43,47 +43,64 @@ bool invariantForGC (GC_state s) {
 
       assert (layout->size <= s->maxFrameSize);
       offsets = layout->offsets;
-      for (unsigned int j = 0; j < offsets[0]; ++j)
-        assert (offsets[j + 1] < layout->size);
     }
   }
   /* Generational */
   if (s->mutatorMarksCards) {
-    assert (s->generationalMaps.cardMap == 
+    assert (s->generationalMaps.cardMap ==
             &(s->generationalMaps.cardMapAbsolute
-              [pointerToCardMapIndexAbsolute(s->heap.start)]));
+              [pointerToCardMapIndexAbsolute(s->heap->start)]));
     assert (&(s->generationalMaps.cardMapAbsolute
-              [pointerToCardMapIndexAbsolute(s->heap.start + s->heap.size - 1)])
-            < (s->generationalMaps.cardMap 
+              [pointerToCardMapIndexAbsolute(s->heap->start + s->heap->size - 1)])
+            < (s->generationalMaps.cardMap
                + (s->generationalMaps.cardMapLength * CARD_MAP_ELEM_SIZE)));
   }
-  assert (isAligned (s->heap.size, s->sysvals.pageSize));
-  assert (isAligned ((size_t)s->heap.start, CARD_SIZE));
-  assert (isFrontierAligned (s, s->heap.start + s->heap.oldGenSize));
-  assert (isFrontierAligned (s, s->heap.nursery));
+  assert (isAligned (s->heap->size, s->sysvals.pageSize));
+  assert (isAligned ((size_t)s->heap->start, CARD_SIZE));
+  assert (isFrontierAligned (s, s->heap->start + s->heap->oldGenSize));
+  assert (isFrontierAligned (s, s->heap->nursery));
   assert (isFrontierAligned (s, s->frontier));
-  assert (s->heap.start + s->heap.oldGenSize <= s->heap.nursery);
-  assert (s->heap.nursery <= s->heap.start + s->heap.size);
-  assert (s->heap.nursery <= s->frontier);
-  unless (0 == s->heap.size) {
+  assert (s->heap->start + s->heap->oldGenSize <= s->heap->nursery);
+  assert (s->heap->nursery <= s->heap->start + s->heap->size);
+  assert (s->heap->nursery <= s->heap->start + s->heap->availableSize);
+  assert (s->heap->nursery <= s->frontier or 0 == s->frontier);
+  assert (s->heap->availableSize <= s->heap->size);
+  assert (s->start <= s->frontier);
+  unless (0 == s->heap->size or 0 == s->frontier) {
     assert (s->frontier <= s->limitPlusSlop);
-    assert (s->limit == s->limitPlusSlop - GC_HEAP_LIMIT_SLOP);
+    assert ((s->limit == 0) or (s->limit == s->limitPlusSlop - GC_HEAP_LIMIT_SLOP));
     assert (hasHeapBytesFree (s, 0, 0));
   }
-  assert (s->secondaryHeap.start == NULL 
-          or s->heap.size == s->secondaryHeap.size);
+  assert (s->secondaryHeap->start == NULL
+          or s->heap->size == s->secondaryHeap->size);
   /* Check that all pointers are into from space. */
   foreachGlobalObjptr (s, assertIsObjptrInFromSpace);
-  pointer back = s->heap.start + s->heap.oldGenSize;
+  pointer back = s->heap->start + s->heap->oldGenSize;
   if (DEBUG_DETAILED)
     fprintf (stderr, "Checking old generation.\n");
-  foreachObjptrInRange (s, alignFrontier (s, s->heap.start), &back, 
+  foreachObjptrInRange (s, alignFrontier (s, s->heap->start), &back,
                         assertIsObjptrInFromSpace, FALSE);
   if (DEBUG_DETAILED)
     fprintf (stderr, "Checking nursery.\n");
-  foreachObjptrInRange (s, s->heap.nursery, &s->frontier, 
+  if (s->procStates) {
+    pointer firstStart = s->heap->frontier;
+    for (proc = 0; proc < s->numberOfProcs; proc++) {
+      foreachObjptrInRange (s, s->procStates[proc].start,
+                            &s->procStates[proc].frontier,
                         assertIsObjptrInFromSpace, FALSE);
-  /* Current thread. */
+       if (s->procStates[proc].start
+          and s->procStates[proc].start < firstStart)
+        firstStart = s->procStates[proc].start;
+    }
+    foreachObjptrInRange (s, s->heap->nursery,
+                          &firstStart,
+                          assertIsObjptrInFromSpace, FALSE);
+  }
+  else {
+    foreachObjptrInRange (s, s->start, &s->frontier,
+                          assertIsObjptrInFromSpace, FALSE);
+  }
+ /* Current thread. */
   GC_stack stack = getStackCurrent(s);
   assert (isStackReservedAligned (s, stack->reserved));
   assert (s->stackBottom == getStackBottom (s, stack));
@@ -100,13 +117,13 @@ bool invariantForGC (GC_state s) {
 
 bool invariantForMutatorFrontier (GC_state s) {
   GC_thread thread = getThreadCurrent(s);
-  return (thread->bytesNeeded 
+  return (thread->bytesNeeded
           <= (size_t)(s->limitPlusSlop - s->frontier));
 }
 
 bool invariantForMutatorStack (GC_state s) {
   GC_stack stack = getStackCurrent(s);
-  return (getStackTop (s, stack) 
+  return (getStackTop (s, stack)
           <= getStackLimit (s, stack) + getStackTopFrameSize (s, stack));
 }
 

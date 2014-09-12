@@ -50,9 +50,11 @@
 #endif
 
 #define HAS_FEROUND TRUE
+#define HAS_FPCLASSIFY TRUE
 #define HAS_MSG_DONTWAIT FALSE
 #define HAS_REMAP FALSE
 #define HAS_SIGALTSTACK TRUE
+#define HAS_SIGNBIT TRUE
 #define HAS_SPAWN FALSE
 #define HAS_TIME_PROFILING TRUE
 
@@ -64,13 +66,25 @@
 /* This should not conflict with existing flags. */
 #define MSG_DONTWAIT 0x1000000
 
-/* fesetround() doesn't seem to be returning 0 as expected. */
-static int MLton_fesetround (int mode)
-{
-        fesetround (mode);
-        return 0;
-}
-#define fesetround MLton_fesetround
+/* Old versions of HP-UX do not handle IPv6. */
+#ifndef AF_INET6
+
+#define AF_INET6 22 /* Internet Protocol, Version 6 */
+#define PF_INET6 AF_INET6
+
+struct sockaddr_in6 {
+  int dummy; // quell gcc warnings about "struct has no members"
+};
+#endif /* !AF_INET6 */
+
+#if HPUX_VERSION < 1111
+struct sockaddr_storage {
+  union {
+    struct sockaddr_in sa_in;
+    struct sockaddr_un sa_un;
+  } sa;
+};
+#endif /* HPUX_VERSION < 1111 */
 
 typedef long suseconds_t; // type of timeval.tv_usec in sys/time.h
 
@@ -83,6 +97,7 @@ float ldexpf(float x, int exp);
 #endif /* __hppa__ */
 
 #define PRIxPTR "lx"
+#define PRIuPTR "lu"
 
 /* These are incorrectly defined in the system headers. */
 #undef PRIu32

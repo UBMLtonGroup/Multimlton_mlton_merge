@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -11,6 +10,8 @@ functor CCodegen (S: C_CODEGEN_STRUCTS): C_CODEGEN =
 struct
 
 open S
+
+type int = Int.t
 
 open Machine
 
@@ -113,7 +114,7 @@ structure C =
       val bytes = int o Bytes.toInt
 
       fun string s =
-         let val quote = "\""
+         let val quote = "\"" (* " *)
          in concat [quote, String.escapeC s, quote]
          end
 
@@ -178,6 +179,7 @@ fun implementsPrim (p: 'a Prim.t): bool =
        | Real_rndToWord _ => true
        | Real_round _ => true
        | Real_sub _ => true
+       | Thread_returnToC => true
        | Word_add _ => true
        | Word_addCheck _ => true
        | Word_andb _ => true
@@ -222,7 +224,7 @@ fun declareGlobals (prefix: string, print) =
       (* gcState can't be static because stuff in mlton-lib.c refers to
        * it.
        *)
-      val _ = print (concat [prefix, "struct GC_state gcState;\n"])
+      val _ = print (concat [prefix, "struct GC_state * gcState;\n"])
       val _ =
          List.foreach
          (CType.all, fn t =>
@@ -231,12 +233,25 @@ fun declareGlobals (prefix: string, print) =
           in
              print (concat [prefix, s, " global", s,
                             " [", C.int (Global.numberOfType t), "];\n"])
-             ; print (concat [prefix, s, " CReturn", CType.name t, ";\n"])
           end)
       val _ =
          print (concat [prefix, "Pointer globalObjptrNonRoot [",
                         C.int (Global.numberOfNonRoot ()),
                         "];\n"])
+   in
+      ()
+   end
+
+fun declareCReturns (print) =
+   let
+      val _ =
+         List.foreach
+         (CType.all, fn t =>
+          let
+             val s = CType.toString t
+          in
+            print (concat ["\t", s, " CReturn", CType.name t, ";\n"])
+          end)
    in
       ()
    end
@@ -380,6 +395,8 @@ fun outputDeclarations
                       in
                          ("WEAK_TAG", false, bytesNonObjptrs, numObjptrs)
                       end
+                 | HeaderOnly => ("HEADER_ONLY_TAG", false, 0, 0)
+                 | Fill => ("FILL_TAG", false, 0, 0)
           in
              concat ["{ ", tag, ", ",
                      C.bool hasIdentity, ", ",
@@ -674,6 +691,7 @@ fun output {program as Machine.Program.T {chunks,
                                        C.bytes offset]]
              | Cast (z, ty) => concat ["(", Type.toC ty, ")", toString z]
              | Contents {oper, ty} => contents (ty, toString oper)
+             | File => "(CPointer)(__FILE__)"
              | Frontier => "Frontier"
              | GCState => "GCState"
              | Global g =>
@@ -683,6 +701,7 @@ fun output {program as Machine.Program.T {chunks,
                                           Int.toString (Global.index g)]]
                   else concat ["GPNR", C.args [Int.toString (Global.index g)]]
              | Label l => labelToStringIndex l
+             | Line => "__LINE__"
              | Null => "NULL"
              | Offset {base, offset, ty} =>
                   concat ["O", C.args [Type.toC ty,
@@ -1059,7 +1078,7 @@ fun output {program as Machine.Program.T {chunks,
                                              (fptr::args) => (fptr, args)
                                            | _ => Error.bug "CCodegen.outputTransfer: CCall,Indirect"
                                        val name =
-                                          concat ["(*(",
+                                          concat ["(*(", (* " *)
                                                   CFunction.cPointerType func,
                                                   " ", fptr, "))"]
                                     in
@@ -1173,7 +1192,10 @@ fun output {program as Machine.Program.T {chunks,
             fun outputOffsets () =
                List.foreach
                ([("ExnStackOffset", GCField.ExnStack),
+                 ("FFIOpArgsResPtrOffset", GCField.FFIOpArgsResPtr),
                  ("FrontierOffset", GCField.Frontier),
+                 ("GlobalObjptrNonRootOffset", GCField.GlobalObjptrNonRoot),
+                 ("ReturnToCOffset", GCField.ReturnToC),
                  ("StackBottomOffset", GCField.StackBottom),
                  ("StackTopOffset", GCField.StackTop)],
                 fn (name, f) =>
@@ -1188,6 +1210,7 @@ fun output {program as Machine.Program.T {chunks,
             ; declareProfileLabels ()
             ; C.callNoSemi ("Chunk", [chunkLabelToString chunkLabel], print)
             ; print "\n"
+            ; declareCReturns (print)
             ; declareRegisters ()
             ; C.callNoSemi ("ChunkSwitch", [chunkLabelToString chunkLabel],
                             print)
@@ -1203,7 +1226,8 @@ fun output {program as Machine.Program.T {chunks,
             ; done ()
          end
       val additionalMainArgs =
-         [chunkLabelToString chunkLabel,
+         [C.int (Global.numberOfNonRoot ()),
+          chunkLabelToString chunkLabel,
           labelToStringIndex label]
       val {print, done, ...} = outputC ()
       fun rest () =

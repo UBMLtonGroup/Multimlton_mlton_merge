@@ -1,5 +1,4 @@
-(* Copyright (C) 2009,2012 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -11,6 +10,8 @@ functor AstCore (S: AST_CORE_STRUCTS): AST_CORE =
 struct
 
 open S Layout
+
+type int = Int.t
 
 structure Field = Record.Field
 structure Wrap = Region.Wrap
@@ -115,10 +116,7 @@ structure Pat =
                                                 layoutF p])
              | Const c => Const.layout c
              | Constraint (p, t) => delimit (layoutConstraint (layoutF p, t))
-             | FlatApp ps =>
-                  if Vector.length ps = 1
-                     then layout (Vector.sub (ps, 0), isDelimited)
-                  else delimit (layoutFlatApp ps)
+             | FlatApp ps => delimit (layoutFlatApp ps)
              | Layered {fixop, var, constraint, pat} =>
                   delimit
                   (mayAlign [maybeConstrain
@@ -155,6 +153,7 @@ structure Pat =
                             NONE => empty
                           | SOME p => seq [str " as ", layoutT p]]]
 
+      val layoutDelimit = layoutF
       val layout = layoutT
 
       fun checkSyntax (p: t): unit =
@@ -418,9 +417,7 @@ fun layoutExp arg =
        | Constraint (expr, constraint) =>
             delimit (layoutConstraint (layoutExpF expr, constraint))
        | FlatApp es =>
-            if Vector.length es = 1
-               then layoutExp (Vector.sub (es, 0), isDelimited)
-            else delimit (seq (separate (Vector.toListMap (es, layoutExpF), " ")))
+            delimit (seq (separate (Vector.toListMap (es, layoutExpF), " ")))
        | Fn m => delimit (seq [str "fn ", layoutMatch m])
        | Handle (try, match) =>
             delimit (align [layoutExpF try,
@@ -511,10 +508,10 @@ and layoutFb clauses =
 
 and layoutClause ({pats, resultType, body}) =
    mayAlign [seq [maybeConstrain (Pat.layoutFlatApp pats,
-                                  resultType),
-                  str " ="],
-             layoutExpF body] (* this has to be layoutExpF in case body
-                                 is a case expression *)
+                            resultType),
+             str " ="],
+         layoutExpF body] (* this has to be layoutExpF in case body
+                           is a case expression *)
 
 fun checkSyntaxExp (e: exp): unit =
    let

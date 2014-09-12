@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2005 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2005 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -44,7 +43,7 @@ structure Word8:
       val vectorToString: t vector -> string
    end =
    struct
-      open Pervasive.Word8
+      open Pervasive.Word8 MLton.Word8
       structure Z = FixWord (Pervasive.Word8)
       open Z
 

@@ -1,11 +1,12 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
  * MLton is released under a BSD-style license.
  * See the file MLton-LICENSE for details.
  *)
+
+type word = Word.t
 
 signature RSSA_STRUCTS = 
    sig
@@ -52,7 +53,9 @@ signature RSSA =
                 * a real operand.
                 *)
              | EnsuresBytesFree
+             | File (* expand by codegen into string constant *)
              | GCState
+             | Line (* expand by codegen into int constant *)
              | Offset of {base: t,
                           offset: Bytes.t,
                           ty: Type.t}

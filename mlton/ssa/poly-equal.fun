@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,10 +6,12 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor PolyEqual (S: SSA_TRANSFORM_STRUCTS): SSA_TRANSFORM = 
+functor PolyEqual (S: POLY_EQUAL_STRUCTS): POLY_EQUAL = 
 struct
 
 open S
+
+type int = Int.t
 
 (*
  * This pass implements polymorphic equality.
@@ -79,7 +80,7 @@ structure Dexp =
                   ty = Type.bool}
    end
 
-fun transform (Program.T {datatypes, globals, functions, main}) =
+fun polyEqual (Program.T {datatypes, globals, functions, main}) =
    let
       val {get = funcInfo: Func.t -> {hasEqual: bool},
            set = setFuncInfo, ...} =

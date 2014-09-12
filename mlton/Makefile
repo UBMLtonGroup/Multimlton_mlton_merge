@@ -1,5 +1,4 @@
-## Copyright (C) 2010,2013 Matthew Fluet.
- # Copyright (C) 1999-2009 Henry Cejtin, Matthew Fluet, Suresh
+## Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  #    Jagannathan, and Stephen Weeks.
  # Copyright (C) 1997-2000 NEC Research Institute.
  #
@@ -13,8 +12,10 @@ BIN := $(BUILD)/bin
 HOST_ARCH := $(shell "$(SRC)/bin/host-arch")
 HOST_OS := $(shell "$(SRC)/bin/host-os")
 LIB := $(BUILD)/lib
+MLTON := mlton
 TARGET := self
 AOUT := mlton-compile
+UP := upgrade-basis.sml
 PATH := $(BIN):$(shell echo $$PATH)
 
 FLAGS := @MLton ram-slop 0.7 gc-summary $(RUNTIME_ARGS) --
@@ -24,94 +25,75 @@ ifeq (self, $(shell if [ -x "$(BIN)/mlton" ]; then echo self; fi))
   FILE := mlton.mlb
   FLAGS += -default-ann 'sequenceNonUnit warn'
   FLAGS += -default-ann 'warnUnused true'
-  # FLAGS += -type-check true
+  # FLAGS += -type-check true -show-types true
 else
-# We're compiling MLton with an older version of itself. 
-# Use "-align 8" for amd64 to avoid GMP/mul_2exp segfault with a
-# mis-aligned limb when compiling with <= 20070826.
-ifeq (amd64,$(findstring $(HOST_ARCH), amd64))
-  FLAGS += -align 8
-endif
-ifneq (,$(findstring $(HOST_OS), cygwin mingw))
-  # The stubs don't work on Cygwin or MinGW, since they define spawn
-  # in terms of fork, and fork doesn't work on Cygwin or MinGW.  So,
-  # make without the stubs.
-  FILE := mlton.mlb
+ifeq (cygwin, $(HOST_OS))
+  # The stubs don't work on Cygwin, since they define spawn in terms of
+  # fork, and fork doesn't work on Cygwin.  So, make without the stubs.
+  FILE := mlton.cm
+else
+ifeq (mingw, $(HOST_OS))
+  # Ditto for MinGW.
+  FILE := mlton.cm
 else
   # We're compiling MLton with an older version of itself, so use the stubs for
   # the MLton structure.
-  FILE := mlton-stubs.mlb
+  FILE := mlton-stubs.cm
+endif
 endif
 endif
 
-FLAGS += -target $(TARGET)
-FLAGS += -verbose 2 -output "$(AOUT)"
+ifeq (new,$(shell PATH="$(BIN):$$PATH"; mlton -target self >/dev/null 2>&1 && echo new))
+  FLAGS += -target $(TARGET)
+else
+  FLAGS += -host $(TARGET)
+endif
+ifeq (new,$(shell PATH="$(BIN):$$PATH"; mlton -verbose 1 >/dev/null 2>&1 && echo new))
+  FLAGS += -verbose 3 -output "$(AOUT)"
+else
+  FLAGS += -v -o "$(AOUT)"
+endif
 FLAGS += $(COMPILE_ARGS)
 
-FRONT_END_SOURCES :=		\
+SOURCES :=			\
+	$(FILE)			\
+	$(UP)			\
 	front-end/ml.lex.sml	\
 	front-end/ml.grm.sig	\
 	front-end/ml.grm.sml	\
 	front-end/mlb.lex.sml	\
 	front-end/mlb.grm.sig	\
-	front-end/mlb.grm.sml
-
-SOURCES :=			\
-	$(FILE)			\
-	upgrade-basis.sml	\
-	$(FRONT_END_SOURCES)	\
-	$(filter-out control/version.sml,$(shell if [ -r $(FILE) ]; then mlton -stop f $(FILE) | grep -v " "; fi))
+	front-end/mlb.grm.sml	\
+	$(shell if [ -r $(FILE) ]; then mlton -stop f $(FILE); fi)
 
 .PHONY: all
 all: $(AOUT)
 
-control/version.sml: control/version_sml.src
-	cat control/version_sml.src |				\
-		sed "s/MLTONVERSION/$$(git log -n1 --pretty="g%h$$(if [ $$(git status --porcelain 2> /dev/null | wc -l) -ne 0 ]; then echo '-dirty'; fi)" 2> /dev/null || echo "???????")/" |	\
-		sed "s/MLTONBUILDDATE/$$(LANG=C date)/" |	\
-		sed "s/MLTONBUILDNODE/$$(uname -n)/" >		\
-		control/version.sml
-
-front-end/%.lex.sml: front-end/%.lex
-	$(MAKE) -C front-end $(@F)
-front-end/%.grm.sig front-end/%.grm.sml: front-end/%.grm
-	$(MAKE) -C front-end $(<F).sig $(<F).sml
-
-# Pass $(PATH) to upgrade-basis because it is run via
-# #!/usr/bin/env bash, which resets the path.
-upgrade-basis.sml:
-	"$(SRC)/bin/upgrade-basis" '$(PATH)' "$(HOST_ARCH)" "$(HOST_OS)" >upgrade-basis.sml
-
-mlton-stubs.mlb: $(shell mlton -stop f ../lib/stubs/mlton-stubs/sources.mlb) $(shell mlton -stop f mlton.mlb)
-	(									\
-		echo '$$(SML_LIB)/basis/unsafe.mlb';				\
-		echo '$$(SML_LIB)/basis/sml-nj.mlb';				\
-		echo '$$(SML_LIB)/basis/mlton.mlb';				\
-		echo '$$(SML_LIB)/basis/basis.mlb';				\
-		echo 'upgrade-basis.sml';					\
-		mlton -stop f mlton.mlb | grep -v 'mlb$$' | grep 'mlyacc';	\
-		mlton -stop f ../lib/stubs/mlton-stubs/sources.mlb |		\
-			grep -v 'mlb$$' | 					\
-			grep 'mlton-stubs';					\
-		mlton -stop f mlton.mlb |					\
-			grep -v 'mlb$$' |					\
-			grep -v 'sml/basis' | 					\
-			grep -v 'targets' | 					\
-			grep -v 'mlyacc';					\
-	) > mlton-stubs.mlb
+front-end/ml.lex.sml: front-end/ml.lex
+	$(MAKE) -C front-end ml.lex.sml
+front-end/ml.grm.sig front-end/ml.grm.sml: front-end/ml.grm
+	$(MAKE) -C front-end ml.grm.sig ml.grm.sml
+front-end/mlb.lex.sml: front-end/mlb.lex
+	$(MAKE) -C front-end mlb.lex.sml
+front-end/mlb.grm.sig front-end/mlb.grm.sml: front-end/mlb.grm
+	$(MAKE) -C front-end mlb.grm.sig mlb.grm.sml
 
 $(AOUT): $(SOURCES)
-	rm -f upgrade-basis.sml
-	$(MAKE) upgrade-basis.sml
-	rm -f control/version.sml
-	$(MAKE) control/version.sml
+	rm -f $(UP)
+	$(MAKE) $(UP)
 	@echo 'Compiling mlton (takes a while)'
 	mlton $(FLAGS) $(FILE)
 
-.PHONY: def-use
-def-use: mlton.def-use
+#! Pass $(PATH) to upgrade-basis because it is run via #!/usr/bin/env
+# bash, which resets the path.
+$(UP):
+	"$(SRC)/bin/upgrade-basis" '$(PATH)' "$(HOST_ARCH)" "$(HOST_OS)" >$(UP)
 
-mlton.def-use: $(SOURCES)
+mlton.sml: $(SOURCES)
+	rm -f mlton.sml && mlton -stop sml mlton.cm && chmod -w mlton.sml
+
+.PHONY: def-use
+def-use:
 	mlton $(FLAGS) -stop tc -prefer-abs-paths true -show-def-use mlton.def-use $(FILE)
 
 .PHONY: clean
@@ -121,62 +103,70 @@ clean:
 #
 # The following rebuilds the heap file for the SML/NJ compiled version
 # of MLton.
+# It requires that you have SML/NJ with the Compilation
+# Manager (CM) installed.  You may need to replace the following with
+# 'sml-cm'.
 #
-SMLNJ := sml
-SMLNJ_CM_SERVERS_NUM := 0
+SML	:= sml
 
-.PHONY: smlnj-mlton
-smlnj-mlton: $(FRONT_END_SOURCES)
-	rm -f control/version.sml
-	$(MAKE) control/version.sml
+.PHONY: nj-mlton
+nj-mlton: $(SOURCES)
+	(									\
+		echo 'SMLofNJ.Internals.GC.messages false;';			\
+		echo '#set CM.Control.verbose false;';				\
+		echo '#set CM.Control.warn_obsolete false;';			\
+		echo 'Control.polyEqWarn := false;';				\
+		echo 'CM.make "sources.cm";';					\
+		echo 'Main.exportNJ ("$(LIB)/mlton");'	\
+	) | "$(SML)"
+
+.PHONY: nj-mlton-dual
+nj-mlton-dual: $(SOURCES)
+	(									\
+		echo 'SMLofNJ.Internals.GC.messages false;';			\
+		echo '#set CM.Control.verbose false;';				\
+		echo '#set CM.Control.warn_obsolete false;';			\
+		echo 'Control.polyEqWarn := false;';				\
+		echo 'val _ = CM.Server.start {cmd = (CommandLine.name (), ["@CMslave"]), name = "server1", pathtrans = NONE, pref = 0};';\
+		echo 'val _ = CM.Server.start {cmd = (CommandLine.name (), ["@CMslave"]), name = "server2", pathtrans = NONE, pref = 0};';\
+		echo 'CM.make "sources.cm";';					\
+		echo 'Main.exportNJ ("$(LIB)/mlton");'	\
+	) | "$(SML)"
+
+.PHONY: nj-mlton-quad
+nj-mlton-quad: $(SOURCES)
+	(									\
+		echo 'SMLofNJ.Internals.GC.messages false;';			\
+		echo '#set CM.Control.verbose false;';				\
+		echo '#set CM.Control.warn_obsolete false;';			\
+		echo 'Control.polyEqWarn := false;';				\
+		echo 'val _ = CM.Server.start {cmd = (CommandLine.name (), ["@CMslave"]), name = "server1", pathtrans = NONE, pref = 0};';\
+		echo 'val _ = CM.Server.start {cmd = (CommandLine.name (), ["@CMslave"]), name = "server2", pathtrans = NONE, pref = 0};';\
+		echo 'val _ = CM.Server.start {cmd = (CommandLine.name (), ["@CMslave"]), name = "server3", pathtrans = NONE, pref = 0};';\
+		echo 'val _ = CM.Server.start {cmd = (CommandLine.name (), ["@CMslave"]), name = "server4", pathtrans = NONE, pref = 0};';\
+		echo 'CM.make "sources.cm";';					\
+		echo 'Main.exportNJ ("$(LIB)/mlton");'	\
+	) | "$(SML)"
+
+.PHONY: nj-whole
+nj-whole: $(SOURCES)
 	(									\
 		echo 'SMLofNJ.Internals.GC.messages false;';			\
 		echo '#set CM.Control.verbose false;';				\
 		echo '#set CM.Control.warn_obsolete false;';			\
 		echo 'Control.polyEqWarn := false;';				\
 		echo 'local';							\
-		echo 'fun loop 0 = () | loop n = (CM.Server.start {cmd = (CommandLine.name (), ["@CMslave"]), name = "server" ^ (Int.toString n), pathtrans = NONE, pref = 0}; loop (n - 1));'; \
+		cmcat sources.cm | grep 'mlton-stubs-in-smlnj' | xargs cat;	\
+		cmcat sources.cm | grep 'mlyacc' | xargs cat;			\
+		cmcat sources.cm | grep -v 'mlyacc' |				\
+			grep -v 'mlton-stubs-in-smlnj' | xargs cat;		\
 		echo 'in';							\
-		echo 'val _ = loop $(SMLNJ_CM_SERVERS_NUM);';			\
-		echo 'end;';							\
-		echo 'if (CM.make "mlton-smlnj.cm") handle _ => false';		\
-		echo '   then ()';						\
-		echo '   else OS.Process.exit OS.Process.failure;'; 		\
-		echo 'SMLofNJ.exportFn("mlton-smlnj",Main.main);'		\
-	) | "$(SMLNJ)"
+		echo 'val _ = Main.exportNJ ("$(SRC)/basis-library", "$(LIB)/mlton")';	\
+		echo 'end';							\
+	) >mlton.whole.sml
+	"$(SML)" <mlton.whole.sml
 
-#
-# The following rebuilds the executable file for the Poly/ML compiled
-# version of MLton.
-#
-POLYML	:= poly
-
-.PHONY: polyml-mlton
-polyml-mlton: mlton-polyml.use $(FRONT_END_SOURCES)
-	rm -f control/version.sml
-	$(MAKE) control/version.sml
-	(									\
-		echo 'use "mlton-polyml.use";';					\
-		echo 'PolyML.export("mlton-polyml", Main.mainWrapped);';	\
-	) | "$(POLYML)"
-	$(CC) -o mlton-polyml mlton-polyml.o -lpolymain -lpolyml
-	rm -f mlton-polyml.o
-
-mlton-polyml.use: ../lib/stubs/basis-stubs-for-polyml/sources.use ../lib/stubs/mlton-stubs-for-polyml/sources.use $(shell mlton -stop f ../lib/stubs/mlton-stubs/sources.mlb) $(filter-out control/version.sml,$(shell mlton -stop f mlton.mlb))
-	(									\
-		cat ../lib/stubs/basis-stubs-for-polyml/sources.use |		\
-			sed 's|use "\(.*\)";|../lib/stubs/basis-stubs-for-polyml/\1|'; \
-		mlton -stop f mlton.mlb | grep -v 'mlb$$' | grep 'mlyacc';	\
-		cat ../lib/stubs/mlton-stubs-for-polyml/sources.use |		\
-			sed 's|use "\(.*\)";|../lib/stubs/mlton-stubs-for-polyml/\1|'; \
-		mlton -stop f ../lib/stubs/mlton-stubs/sources.mlb |		\
-			grep -v 'mlb$$' | 					\
-			grep 'mlton-stubs';					\
-		mlton -stop f mlton.mlb |					\
-			grep -v 'mlb$$' |					\
-			grep -v 'sml/basis' | 					\
-			grep -v 'targets' | 					\
-			grep -v 'mlton-stubs' |					\
-			grep -v 'mlyacc' |					\
-			grep -v 'call-main.sml';				\
-	) | sed 's|\(.*\)|use "\1";|' > mlton-polyml.use
+.PHONY: warn
+warn:
+	mlton -stop tc -default-ann 'warnUnused true' $(FILE) \
+		>/tmp/z.warn 2>&1

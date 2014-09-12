@@ -2,10 +2,9 @@
 
 #include "platform.h"
 
+#include "mkdir2.c"
 #include "mmap.c"
-#if not HAS_MSG_DONTWAIT
 #include "recv.nonblock.c"
-#endif
 #include "windows.c"
 #include "mremap.c"
 
@@ -113,12 +112,7 @@ HANDLE fileDesHandle (int fd) {
 C_String_t Cygwin_toFullWindowsPath (NullString8_t path) {
         static char res[MAX_PATH];
 
-#if ((CYGWIN_VERSION_API_MAJOR > 0) || (CYGWIN_VERSION_API_MINOR > 181))
-        cygwin_conv_path (CCP_POSIX_TO_WIN_A | CCP_ABSOLUTE, 
-                          (char*)path, &res[0], MAX_PATH);
-#else
         cygwin_conv_to_full_win32_path ((char*)path, &res[0]);
-#endif
         return (C_String_t)&res[0];
 }
 
@@ -135,3 +129,56 @@ void Posix_IO_settext (C_Fd_t fd) {
         /* cygwin has a different method for working with its fds */
         setmode (fd, O_TEXT);
 }
+
+/* ------------------------------------------------- */
+/*                      Process                      */
+/* ------------------------------------------------- */
+
+C_Errno_t(C_PId_t) MLton_Process_cwait (C_PId_t pid, Ref(C_Status_t) status) {
+  HANDLE h;
+
+  h = (HANDLE)pid;
+  /* -1 on error, the casts here are due to bad types on both sides */
+  return cwait ((int*)status, (pid_t)h, 0);
+}
+
+/* 20070822, fluet: The following 'pure win32' implementation of cwait
+ * no longer works on recent Cygwin versions.  It always takes the
+ * {errno = ECHILD; return -1} branch, even when the child process
+ * exists.
+ */
+
+/* Cygwin replaces cwait with a call to waitpid.
+ * waitpid only works when the process was created by cygwin and there
+ * is a secret magical pipe for sending signals and exit statuses over.
+ * Screw that. We implement our own cwait using pure win32.
+ */
+/* C_Errno_t(C_PId_t) MLton_Process_cwait(C_PId_t pid, Ref(C_Status_t) status) { */
+/*         HANDLE h; */
+
+/*         h = (HANDLE)pid; */
+/*         /\* This all works on Win95+ *\/ */
+/*         while (1) { */
+/*                 /\* Using an open handle we can get the exit status *\/ */
+/*                 unless (GetExitCodeProcess (h, (DWORD*)status)) { */
+/*                         /\* An error probably means the child does not exist *\/ */
+/*                         errno = ECHILD; */
+/*                         return -1; */
+/*                 } */
+/*                 /\* Thank you windows API. */
+/*                  * I hope no process ever exits with STILL_ACTIVE. */
+/*                  * At least most other windows programs have this bug too. */
+/*                  *\/ */
+/*                 if (*(DWORD*)status != STILL_ACTIVE) /\* 259 *\/ */
+/*                         break; */
+/*                 /\* Wait for h to change state for up to one second. */
+/*                  * We don't wait longer b/c there is a race condition */
+/*                  * between checking the exit status and calling this method. */
+/*                  * By only waiting 1s, no infinite loop can result. */
+/*                  *\/ */
+/*                 WaitForSingleObject (h, 1000); */
+/*         } */
+/*         /\* Cleanup the process handle -- don't call this method again *\/ */
+/*         CloseHandle (h); */
+/*         return pid; */
+/* } */

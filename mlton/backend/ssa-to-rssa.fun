@@ -1,5 +1,4 @@
-(* Copyright (C) 2009,2011 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -104,6 +103,21 @@ structure CFunction =
             target = Direct "MLton_halt",
             writesStackTop = true}
 
+      val ffiGetOpArgsResPtr = fn () =>
+         T {args = Vector.new1 (Type.gcState ()),
+            bytesNeeded = NONE,
+            convention = Cdecl,
+            ensuresBytesFree = false,
+            mayGC = false,
+            maySwitchThreads = false,
+            modifiesFrontier = false,
+            prototype = (Vector.new1 CType.gcState, SOME CType.cpointer),
+            readsStackTop = false,
+            return = Type.cpointer (),
+            symbolScope = Private,
+            target = Direct "FFI_getOpArgsResPtr",
+            writesStackTop = false}
+
       fun gcArrayAllocate {return} =
          T {args = Vector.new4 (Type.gcState (),
                                 Type.csize (),
@@ -158,6 +172,40 @@ structure CFunction =
             return = Type.unit,
             symbolScope = Private,
             target = Direct "GC_switchToThread",
+            writesStackTop = true}
+
+      val jumpDown = fn () =>
+         T {args = Vector.new2 (Type.gcState (), Type.cint ()),
+            bytesNeeded = NONE,
+            convention = Cdecl,
+            ensuresBytesFree = true,
+            mayGC = true,
+            maySwitchThreads = true,
+            modifiesFrontier = true,
+            prototype = (Vector.new2 (CType.gcState,
+                                      CType.cint ()),
+                         NONE),
+            readsStackTop = true,
+            return = Type.unit,
+            symbolScope = Private,
+            target = Direct "GC_jumpDown",
+            writesStackTop = true}
+
+      val prefixAndSwitchTo = fn () =>
+         T {args = Vector.new2 (Type.gcState (), Type.thread ()),
+            bytesNeeded = NONE,
+            convention = Cdecl,
+            ensuresBytesFree = true,
+            mayGC = true,
+            maySwitchThreads = true,
+            modifiesFrontier = true,
+            prototype = (Vector.new2 (CType.gcState,
+                                      CType.thread),
+                         NONE),
+            readsStackTop = true,
+            return = Type.unit,
+            symbolScope = Private,
+            target = Direct "GC_prefixAndSwitchTo",
             writesStackTop = true}
 
       (* CHECK; weak as objptr *)
@@ -599,18 +647,12 @@ fun updateCard (addr: Operand.t): Statement.t list =
              src = Operand.word (WordX.one cardElemSize)}]
    end
 
-fun convertWordSize (ws: WordSize.t): WordSize.t =
-   WordSize.roundUpToPrim ws
-
-fun convertWordX (w: WordX.t): WordX.t =
-   WordX.resize (w, convertWordSize (WordX.size w))
-
 fun convertConst (c: Const.t): Const.t =
    let
       datatype z = datatype Const.t
    in
       case c of
-         Word w => Word (convertWordX w)
+         Word w => Word (WordX.resize (w, WordSize.roundUpToPrim (WordX.size w)))
        | _ => c
    end
 
@@ -694,21 +736,16 @@ fun convert (program as S.Program.T {functions, globals, main, ...},
                                 (ss, t)
                              end
                         | _ => Error.bug "SsaToRssa.translateCase: strange type"))
-          | S.Cases.Word (s, cases) =>
-               let
-                  val cases =
-                     QuickSort.sortVector
-                     (Vector.map (cases, fn (w, l) => (convertWordX w, l)),
-                      fn ((w, _), (w', _)) => WordX.le (w, w', {signed = false}))
-               in
-                  ([],
-                   Switch
-                   (Switch.T
-                    {cases = cases,
-                     default = default,
-                     size = convertWordSize s,
-                     test = varOp test}))
-               end
+          | S.Cases.Word (s, cs) =>
+               ([],
+                Switch
+                (Switch.T
+                 {cases = (QuickSort.sortVector
+                           (cs, fn ((w, _), (w', _)) =>
+                            WordX.le (w, w', {signed = false}))),
+                  default = default,
+                  size = s,
+                  test = varOp test}))
       fun eta (l: Label.t, kind: Kind.t): Label.t =
          let
             val {args, ...} = labelInfo l
@@ -1206,12 +1243,19 @@ fun convert (program as S.Program.T {functions, globals, main, ...},
                                | CPointer_setReal _ => cpointerSet ()
                                | CPointer_setWord _ => cpointerSet ()
                                | FFI f => simpleCCall f
+                               (* PERF spoons this not a very efficient way of
+                                getting this value (since we know its offset *)
+                               | FFI_getOpArgsResPtr =>
+                                    simpleCCallWithGCState
+                                    (CFunction.ffiGetOpArgsResPtr ())
                                | GC_collect =>
                                     ccall
-                                    {args = (Vector.new3
+                                    {args = (Vector.new5
                                              (GCState,
                                               Operand.zero (WordSize.csize ()),
-                                              Operand.bool true)),
+                                              Operand.bool true,
+                                              File,
+                                              Line)),
                                      func = (CFunction.gc
                                              {maySwitchThreads = handlesSignals})}
                                | IntInf_toVector => cast ()
@@ -1322,10 +1366,12 @@ fun convert (program as S.Program.T {functions, globals, main, ...},
                                             Goto {args = Vector.new0 (),
                                                   dst = continue}}
                                         val args =
-                                           Vector.new3
+                                           Vector.new5
                                            (GCState,
                                             Operand.zero (WordSize.csize ()),
-                                            Operand.bool false)
+                                            Operand.bool false,
+                                            File,
+                                            Line)
                                         val switchToHandler =
                                            newBlock
                                            {args = Vector.new0 (),
@@ -1369,6 +1415,12 @@ fun convert (program as S.Program.T {functions, globals, main, ...},
                                                     a 0,
                                                     EnsuresBytesFree)),
                                            func = CFunction.threadSwitchTo ()}
+                               | Threadlet_jumpDown =>
+                                    simpleCCallWithGCState
+                                    (CFunction.jumpDown ())
+                               | Threadlet_prefixAndSwitchTo =>
+                                    simpleCCallWithGCState
+                                    (CFunction.prefixAndSwitchTo ())
                                | Vector_length => arrayOrVectorLength ()
                                | Weak_canGet =>
                                     ifIsWeakPointer
@@ -1386,9 +1438,7 @@ fun convert (program as S.Program.T {functions, globals, main, ...},
                                      (CFunction.weakGet
                                       {arg = Operand.ty (a 0),
                                        return = t}),
-                                     fn () => (case toRtype ty of
-                                                  NONE => none ()
-                                                | SOME t => move (bogus t)))
+                                     none)
                                | Weak_new =>
                                     ifIsWeakPointer
                                     (ty,

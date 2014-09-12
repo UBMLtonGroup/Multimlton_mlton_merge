@@ -8,13 +8,17 @@
 
 void beginAtomic (GC_state s) {
   s->atomicState++;
+  //printf ("\natomicState %d", s->atomicState);
+  //fflush (stdout);
   if (0 == s->limit)
     s->limit = s->limitPlusSlop - GC_HEAP_LIMIT_SLOP;
 }
 
 void endAtomic (GC_state s) {
   s->atomicState--;
-  if (0 == s->atomicState 
+  //printf ("\natomicState %d", s->atomicState);
+  //fflush (stdout);
+  if (0 == s->atomicState
       and s->signalsInfo.signalIsPending)
     s->limit = 0;
 }

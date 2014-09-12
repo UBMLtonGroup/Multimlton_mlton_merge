@@ -17,7 +17,7 @@ functor PackWord (S: sig
                         val toLarge: word -> LargeWord.word
                         val toLargeX: word -> LargeWord.word
                         val fromLarge: LargeWord.word -> word
-                     end): PACK_WORD_EXTRA =
+                     end): PACK_WORD =
 struct
 
 open S
@@ -26,10 +26,10 @@ val bytesPerElem = Int.div (wordSize, 8)
 
 fun offset (i, n) = 
    let
+      val i' = Int.* (bytesPerElem, i)
       val () =
          if Primitive.Controls.safe
-            andalso (Int.geu (Int.+ (Int.* (bytesPerElem, i), 
-                                     Int.- (bytesPerElem, 1)), n))
+            andalso (Int.geu (Int.+ (i', Int.- (bytesPerElem, 1)), n))
             then raise Subscript
             else ()
    in
@@ -45,14 +45,6 @@ val (subA, subV, updA) =
    if isBigEndian = Primitive.MLton.Platform.Arch.hostIsBigEndian
       then (subArr, subVec, update)
    else (subArrRev, subVecRev, updateRev)
-
-fun unsafeUpdate (a, i, w) =
-   let
-      val i = SeqIndex.fromInt i
-      val a = Word8Array.toPoly a
-   in
-      updA (a, i, fromLarge w)
-   end
 
 fun update (a, i, w) =
    let
@@ -76,67 +68,53 @@ in
    val subVecX = toLargeX o (make (subV, Word8Vector.length, Word8Vector.toPoly))
 end
 
-local
-   fun make (sub, length, toPoly) (av, i) =
-      let
-         val i = SeqIndex.fromInt i
-      in
-         sub (toPoly av, i)
-      end
-in
-   val unsafeSubArr = toLarge o (make (subA, Word8Array.length, Word8Array.toPoly))
-   val unsafeSubArrX = toLargeX o (make (subA, Word8Array.length, Word8Array.toPoly))
-   val unsafeSubVec = toLarge o (make (subV, Word8Vector.length, Word8Vector.toPoly))
-   val unsafeSubVecX = toLargeX o (make (subV, Word8Vector.length, Word8Vector.toPoly))
 end
 
-end
-
-structure PackWord8Big: PACK_WORD_EXTRA =
+structure PackWord8Big: PACK_WORD =
    PackWord (val isBigEndian = true
              open Primitive.PackWord8
              open Word8)
-structure PackWord8Little: PACK_WORD_EXTRA =
+structure PackWord8Little: PACK_WORD =
    PackWord (val isBigEndian = false
              open Primitive.PackWord8
              open Word8)
-structure PackWord8Host: PACK_WORD_EXTRA =
+structure PackWord8Host: PACK_WORD =
    PackWord (val isBigEndian = Primitive.MLton.Platform.Arch.hostIsBigEndian
              open Primitive.PackWord8
              open Word8)
-structure PackWord16Big: PACK_WORD_EXTRA =
+structure PackWord16Big: PACK_WORD =
    PackWord (val isBigEndian = true
              open Primitive.PackWord16
              open Word16)
-structure PackWord16Little: PACK_WORD_EXTRA =
+structure PackWord16Little: PACK_WORD =
    PackWord (val isBigEndian = false
              open Primitive.PackWord16
              open Word16)
-structure PackWord16Host: PACK_WORD_EXTRA =
+structure PackWord16Host: PACK_WORD =
    PackWord (val isBigEndian = Primitive.MLton.Platform.Arch.hostIsBigEndian
              open Primitive.PackWord16
              open Word16)
-structure PackWord32Big: PACK_WORD_EXTRA =
+structure PackWord32Big: PACK_WORD =
    PackWord (val isBigEndian = true
              open Primitive.PackWord32
              open Word32)
-structure PackWord32Little: PACK_WORD_EXTRA =
+structure PackWord32Little: PACK_WORD =
    PackWord (val isBigEndian = false
              open Primitive.PackWord32
              open Word32)
-structure PackWord32Host: PACK_WORD_EXTRA =
+structure PackWord32Host: PACK_WORD =
    PackWord (val isBigEndian = Primitive.MLton.Platform.Arch.hostIsBigEndian
              open Primitive.PackWord32
              open Word32)
-structure PackWord64Big: PACK_WORD_EXTRA =
+structure PackWord64Big: PACK_WORD =
    PackWord (val isBigEndian = true
              open Primitive.PackWord64
              open Word64)
-structure PackWord64Little: PACK_WORD_EXTRA =
+structure PackWord64Little: PACK_WORD =
    PackWord (val isBigEndian = false
              open Primitive.PackWord64
              open Word64)
-structure PackWord64Host: PACK_WORD_EXTRA =
+structure PackWord64Host: PACK_WORD =
    PackWord (val isBigEndian = Primitive.MLton.Platform.Arch.hostIsBigEndian
              open Primitive.PackWord64
              open Word64)
@@ -178,15 +156,15 @@ local
          end
       end
 in
-structure PackWordBig: PACK_WORD_EXTRA =
+structure PackWordBig: PACK_WORD =
    PackWord (val isBigEndian = true
              open PackWord
              open Word)
-structure PackWordLittle: PACK_WORD_EXTRA =
+structure PackWordLittle: PACK_WORD =
    PackWord (val isBigEndian = false
              open PackWord
              open Word)
-structure PackWordHost: PACK_WORD_EXTRA =
+structure PackWordHost: PACK_WORD =
    PackWord (val isBigEndian = Primitive.MLton.Platform.Arch.hostIsBigEndian
              open PackWord
              open Word)
@@ -229,15 +207,15 @@ local
          end
       end
 in
-structure PackLargeWordBig: PACK_WORD_EXTRA =
+structure PackLargeWordBig: PACK_WORD =
    PackWord (val isBigEndian = true
              open PackLargeWord
              open LargeWord)
-structure PackLargeWordLittle: PACK_WORD_EXTRA =
+structure PackLargeWordLittle: PACK_WORD =
    PackWord (val isBigEndian = false
              open PackLargeWord
              open LargeWord)
-structure PackLargeWordHost: PACK_WORD_EXTRA =
+structure PackLargeWordHost: PACK_WORD =
    PackWord (val isBigEndian = Primitive.MLton.Platform.Arch.hostIsBigEndian
              open PackLargeWord
              open LargeWord)

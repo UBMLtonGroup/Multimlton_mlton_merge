@@ -1,11 +1,13 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
  * MLton is released under a BSD-style license.
  * See the file MLton-LICENSE for details.
  *)
+
+type int = Int.t
+type word = Word.t
 
 signature RUNTIME_STRUCTS =
    sig
@@ -23,10 +25,13 @@ signature RUNTIME =
              | CurrentThread
              | CurSourceSeqsIndex
              | ExnStack
+             | FFIOpArgsResPtr
              | Frontier (* The place where the next object is allocated. *)
+             | GlobalObjptrNonRoot
              | Limit (* frontier + heapSize - LIMIT_SLOP *)
              | LimitPlusSlop (* frontier + heapSize *)
              | MaxFrameSize
+             | ReturnToC
              | SignalIsPending
              | StackBottom
              | StackLimit (* Must have StackTop <= StackLimit *)
@@ -39,10 +44,13 @@ signature RUNTIME =
                              currentThread: Bytes.t,
                              curSourceSeqsIndex: Bytes.t,
                              exnStack: Bytes.t,
+                             ffiOpArgsResPtr: Bytes.t,
                              frontier: Bytes.t,
+                             globalObjptrNonRoot: Bytes.t,
                              limit: Bytes.t,
                              limitPlusSlop: Bytes.t,
                              maxFrameSize: Bytes.t,
+                             returnToC: Bytes.t,
                              signalIsPending: Bytes.t,
                              stackBottom: Bytes.t,
                              stackLimit: Bytes.t,
@@ -52,10 +60,13 @@ signature RUNTIME =
                            currentThread: Bytes.t,
                            curSourceSeqsIndex: Bytes.t,
                            exnStack: Bytes.t,
+                           ffiOpArgsResPtr: Bytes.t,
                            frontier: Bytes.t,
+                           globalObjptrNonRoot: Bytes.t,
                            limit: Bytes.t,
                            limitPlusSlop: Bytes.t,
                            maxFrameSize: Bytes.t,
+                           returnToC: Bytes.t,
                            signalIsPending: Bytes.t,
                            stackBottom: Bytes.t,
                            stackLimit: Bytes.t,
@@ -74,8 +85,11 @@ signature RUNTIME =
                           numObjptrs: int}
              | Stack
              | Weak of {gone: bool}
+             | HeaderOnly
+             | Fill
          end
 
+      val allocTooLarge: Bytes.t
       val arrayLengthOffset: unit -> Bytes.t
       val arrayLengthSize: unit -> Bytes.t
       val headerOffset: unit -> Bytes.t

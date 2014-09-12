@@ -8,16 +8,15 @@ signature CLIST =
    end
 
 functor CList (structure F: MLTON_FINALIZABLE
-               structure P: MLTON_POINTER
                structure Prim:
                   sig
-                     val cons: int * P.t -> P.t
-                     val free: P.t -> unit
-                     val sing: int -> P.t
-                     val sum: P.t -> int
+                     val cons: int * Word32.word -> Word32.word
+                     val free: Word32.word -> unit
+                     val sing: int -> Word32.word
+                     val sum: Word32.word -> int
                   end): CLIST =
    struct
-      type t = P.t F.t
+      type t = Word32.word F.t
 
       fun cons (n: int, l: t) =
          F.withValue
@@ -78,13 +77,12 @@ functor Test (structure CList: CLIST
 
 structure CList =
    CList (structure F = MLton.Finalizable
-          structure P = MLton.Pointer
           structure Prim =
              struct
-                val cons = _import "listCons": int * P.t -> P.t;
-                val free = _import "listFree": P.t -> unit;
-                val sing = _import "listSing": int -> P.t;
-                val sum = _import "listSum": P.t -> int;
+                val cons = _import "listCons": int * Word32.word -> Word32.word;
+                val free = _import "listFree": Word32.word -> unit;
+                val sing = _import "listSing": int -> Word32.word;
+                val sum = _import "listSum": Word32.word -> int;
              end)
 
 structure S = Test (structure CList = CList

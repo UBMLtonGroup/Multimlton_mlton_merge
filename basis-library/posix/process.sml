@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2006, 2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006, 2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -59,7 +58,7 @@ structure PosixProcess: POSIX_PROCESS_EXTRA =
             val file = conv file
             val args = convs args
          in
-            (SysCall.simple 
+            (SysCall.simple
              (fn () => Prim.execp (file, args))
              ; raise Fail "Posix.Process.execp")
          end
@@ -68,13 +67,13 @@ structure PosixProcess: POSIX_PROCESS_EXTRA =
          W_ANY_CHILD
        | W_CHILD of pid
        | W_SAME_GROUP
-       | W_GROUP of pid 
+       | W_GROUP of pid
 
       datatype exit_status =
          W_EXITED
        | W_EXITSTATUS of Word8.word
        | W_SIGNALED of signal
-       | W_STOPPED of signal 
+       | W_STOPPED of signal
 
       fun fromStatus' (status : C_Status.t) =
          if Prim.ifExited status <> C_Int.zero
@@ -102,6 +101,9 @@ structure PosixProcess: POSIX_PROCESS_EXTRA =
          val status: C_Status.t ref = ref (C_Status.fromInt 0)
          fun wait (wa, status, flags) =
             let
+               val useCwait =
+                  Primitive.MLton.Platform.OS.useWindowsProcess
+                  andalso case wa of W_CHILD _ => true | _ => false
                val pid =
                   case wa of
                      W_ANY_CHILD => C_PId.castFromFixedInt ~1
@@ -113,7 +115,10 @@ structure PosixProcess: POSIX_PROCESS_EXTRA =
                (PId.fromRep o SysCall.simpleResultRestart')
                ({errVal = C_PId.castFromFixedInt ~1}, fn () =>
                 let
-                   val pid = Prim.waitpid (pid, status, flags)
+                   val pid =
+                      if useCwait
+                         then PrimitiveFFI.MLton.Process.cwait (pid, status)
+                      else Prim.waitpid (pid, status, flags)
                 in
                    pid
                 end)
@@ -123,7 +128,7 @@ structure PosixProcess: POSIX_PROCESS_EXTRA =
          fun waitpid (wa, flags) =
             let
                val pid = wait (wa, status, flags)
-            in 
+            in
                (pid, getStatus ())
             end
 
@@ -149,7 +154,7 @@ structure PosixProcess: POSIX_PROCESS_EXTRA =
       datatype killpid_arg  =
          K_PROC of pid
        | K_SAME_GROUP
-       | K_GROUP of pid 
+       | K_GROUP of pid
 
       fun kill (ka: killpid_arg, s: signal): unit =
          let
@@ -162,12 +167,18 @@ structure PosixProcess: POSIX_PROCESS_EXTRA =
          in
             SysCall.simple (fn () => Prim.kill (pid, s))
          end
+      fun raiseSig (s: signal): unit =
+      let
+        val s = PosixSignal.toRep s
+      in
+        SysCall.simple (fn () => Prim.raiseSig (s))
+      end
 
       local
          fun wrap prim (t: Time.time): Time.time =
             Time.fromSeconds
             (C_UInt.toLargeInt
-             (prim 
+             (prim
               ((C_UInt.fromLargeInt (Time.toSeconds t))
                handle Overflow => Error.raiseSys Error.inval)))
       in

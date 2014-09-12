@@ -1,5 +1,4 @@
-/* Copyright (C) 2012 Matthew Fluet.
- * Copyright (C) 2004-2008 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 2004-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -67,7 +66,8 @@ static const char* mlTypesHStd[] = {
   // "typedef void* Pointer;",
   // "typedef uintptr_t Pointer;",
   // "typedef unsigned char* Pointer;",
-  "typedef unsigned char PointerAux __attribute__ ((may_alias));",
+  // "struct PointerAux { unsigned char z[4]; } __attribute__ ((aligned (4), may_alias));",
+  "typedef unsigned char PointerAux __attribute__ ((aligned (4), may_alias));",
   "typedef PointerAux* Pointer;",
   "#define Array(t) Pointer",
   "#define Ref(t) Pointer",
@@ -233,6 +233,24 @@ static const char* mlTypesHStd[] = {
   } while (0)
 #define ptrtype(t, name)                            \
   do {                                              \
+  writeString (cTypesHFd, "typedef");               \
+  writeString (cTypesHFd, " /* ");                  \
+  writeString (cTypesHFd, #t);                      \
+  writeString (cTypesHFd, " */ ");                  \
+  writeString (cTypesHFd, "Pointer");               \
+  writeString (cTypesHFd, " ");                     \
+  writeString (cTypesHFd, "C_");                    \
+  writeString (cTypesHFd, name);                    \
+  writeString (cTypesHFd, "_t;");                   \
+  writeNewline (cTypesHFd);                         \
+  writeString (cTypesSMLFd, "structure C_");        \
+  writeString (cTypesSMLFd, name);                  \
+  writeString (cTypesSMLFd, " = Pointer");          \
+  writeNewline (cTypesSMLFd);                       \
+  } while (0)
+#undef ptrtype
+#define ptrtype(t, name)                            \
+  do {                                              \
   systype(t, "Word", name);                         \
   } while (0)
 
@@ -269,8 +287,6 @@ static const char* mlTypesHStd[] = {
   writeString (cTypesSMLFd, bt);                    \
   writeString (cTypesSMLFd, "N (A)");               \
   writeNewline (cTypesSMLFd);                       \
-  free (btLower);                                   \
-  free (btUpper);                                   \
   } while (0)
 
 static const char* mlTypesHSuffix[] = {
@@ -410,6 +426,11 @@ int main (__attribute__ ((unused)) int argc,
   writeStringWithNewline (cTypesHFd, "/* from \"gmp.h\" */");
   writeStringWithNewline (cTypesSMLFd, "(* from \"gmp.h\" *)");
   chksystype(mp_limb_t, "MPLimb");
+
+  writeNewline (cTypesHFd);writeNewline (cTypesSMLFd);
+  writeStringWithNewline (cTypesHFd, "/* from \"pthreadtypes.h\" */");
+  writeStringWithNewline (cTypesSMLFd, "(* from \"pthreadtypes.h\" *)");
+  chksystype(pthread_key_t, "Pthread_Key");
 
   writeNewline (cTypesHFd);writeNewline (cTypesSMLFd);
   for (int i = 0; cTypesHSuffix[i] != NULL; i++)

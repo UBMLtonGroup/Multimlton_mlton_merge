@@ -1,5 +1,4 @@
-/* Copyright (C) 2012 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,7 +6,6 @@
  * See the file MLton-LICENSE for details.
  */
 
-#if ASSERT
 bool isPointerInToSpace (GC_state s, pointer p) {
   return (not (isPointer (p))
           or (s->forwardState.toStart <= p and p < s->forwardState.toLimit));
@@ -21,7 +19,6 @@ bool isObjptrInToSpace (GC_state s, objptr op) {
   p = objptrToPointer (op, s->forwardState.toStart);
   return isPointerInToSpace (s, p);
 }
-#endif
 
 /* forward (s, opp)
  * Forwards the object pointed to by *opp and updates *opp to point to
@@ -33,7 +30,7 @@ void forwardObjptr (GC_state s, objptr *opp) {
   GC_header header;
 
   op = *opp;
-  p = objptrToPointer (op, s->heap.start);
+  p = objptrToPointer (op, s->heap->start);
   if (DEBUG_DETAILED)
     fprintf (stderr,
              "forwardObjptr  opp = "FMTPTR"  op = "FMTOBJPTR"  p = "FMTPTR"\n",
@@ -62,18 +59,24 @@ void forwardObjptr (GC_state s, objptr *opp) {
                                          bytesNonObjptrs, numObjptrs);
       skip = 0;
     } else { /* Stack. */
-      bool current;
       size_t reservedNew;
       GC_stack stack;
+      /* XXX KC : Make sure this correct */
+      bool isCurrentStack = false;
 
       assert (STACK_TAG == tag);
       headerBytes = GC_STACK_HEADER_SIZE;
       stack = (GC_stack)p;
-      current = getStackCurrent(s) == stack;
 
-      reservedNew = sizeofStackShrinkReserved (s, stack, current);
+      /* Check if the pointer is the current stack of any processor. */
+      for (int proc = 0; proc < s->numberOfProcs; proc++) {
+        isCurrentStack |= (getStackCurrent(&s->procStates[proc]) == stack
+                           && not isStackEmpty(stack));
+      }
+
+      reservedNew = sizeofStackShrinkReserved (s, stack, isCurrentStack);
       if (reservedNew < stack->reserved) {
-        if (DEBUG_STACKS or s->controls.messages)
+        if (DEBUG_STACKS or s->controls->messages)
           fprintf (stderr,
                    "[GC: Shrinking stack of size %s bytes to size %s bytes, using %s bytes.]\n",
                    uintmaxToCommaString(stack->reserved),
@@ -132,14 +135,14 @@ void forwardObjptrIfInNursery (GC_state s, objptr *opp) {
   pointer p;
 
   op = *opp;
-  p = objptrToPointer (op, s->heap.start);
-  if (p < s->heap.nursery)
+  p = objptrToPointer (op, s->heap->start);
+  if (p < s->heap->nursery)
     return;
   if (DEBUG_GENERATIONAL)
     fprintf (stderr,
              "forwardObjptrIfInNursery  opp = "FMTPTR"  op = "FMTOBJPTR"  p = "FMTPTR"\n",
              (uintptr_t)opp, op, (uintptr_t)p);
-  assert (s->heap.nursery <= p and p < s->limitPlusSlop);
+  assert (s->heap->nursery <= p and p < s->limitPlusSlop);
   forwardObjptr (s, opp);
 }
 
@@ -159,11 +162,11 @@ void forwardInterGenerationalObjptrs (GC_state s) {
   /* Constants. */
   cardMap = s->generationalMaps.cardMap;
   crossMap = s->generationalMaps.crossMap;
-  maxCardIndex = sizeToCardMapIndex (align (s->heap.oldGenSize, CARD_SIZE));
-  oldGenStart = s->heap.start;
-  oldGenEnd = oldGenStart + s->heap.oldGenSize;
+  maxCardIndex = sizeToCardMapIndex (align (s->heap->oldGenSize, CARD_SIZE));
+  oldGenStart = s->heap->start;
+  oldGenEnd = oldGenStart + s->heap->oldGenSize;
   /* Loop variables*/
-  objectStart = alignFrontier (s, s->heap.start);
+  objectStart = alignFrontier (s, s->heap->start);
   cardIndex = 0;
   cardStart = oldGenStart;
 checkAll:
@@ -179,7 +182,7 @@ checkCard:
   if (cardMap[cardIndex]) {
     pointer lastObject;
 
-    s->cumulativeStatistics.numCardsMarked++;
+    s->cumulativeStatistics->numCardsMarked++;
     if (DEBUG_GENERATIONAL)
       fprintf (stderr, "card %"PRIuMAX" is marked  objectStart = "FMTPTR"\n",
                (uintmax_t)cardIndex, (uintptr_t)objectStart);
@@ -197,10 +200,10 @@ checkCard:
      */
     objectStart = foreachObjptrInRange (s, objectStart, &cardEnd,
                                         forwardObjptrIfInNursery, FALSE);
-    s->cumulativeStatistics.bytesScannedMinor += (uintmax_t)(objectStart - lastObject);
+    s->cumulativeStatistics->bytesScannedMinor += objectStart - lastObject;
     if (objectStart == oldGenEnd)
       goto done;
-    cardIndex = sizeToCardMapIndex ((size_t)(objectStart - oldGenStart));
+    cardIndex = sizeToCardMapIndex (objectStart - oldGenStart);
     cardStart = oldGenStart + cardMapIndexToSize (cardIndex);
     goto checkCard;
   } else {

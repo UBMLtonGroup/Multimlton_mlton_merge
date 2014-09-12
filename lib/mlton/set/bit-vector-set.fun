@@ -1,10 +1,12 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2005 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2005 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
  * See the file MLton-LICENSE for details.
  *)
+
+type int = Int.t
+type word = Word.t
 
 functor BitVectorSet (Element : sig 
                                   include T
@@ -30,7 +32,7 @@ struct
      open Word
      val binSize = wordSize
 
-     val equals : t * t -> bool = op =
+     val equals = op =
      val empty : t = 0wx0
      fun singleton i = <<(0wx1, Word.fromInt i)
      val difference = fn (b1, b2) => andb (b1, notb b2)

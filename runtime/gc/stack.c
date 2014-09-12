@@ -1,5 +1,4 @@
-/* Copyright (C) 2012 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -18,11 +17,11 @@ void displayStack (__attribute__ ((unused)) GC_state s,
 }
 
 
-#if ASSERT
 bool isStackEmpty (GC_stack stack) {
   return 0 == stack->used;
 }
 
+#if ASSERT
 bool isStackReservedAligned (GC_state s, size_t reserved) {
   return isAligned (GC_STACK_HEADER_SIZE + sizeof (struct GC_stack) + reserved,
                     s->alignment);
@@ -38,7 +37,7 @@ size_t sizeofStackSlop (GC_state s) {
 
 
 /* Pointer to the bottommost word in use on the stack. */
-pointer getStackBottom (ARG_USED_FOR_ASSERT GC_state s, GC_stack stack) {
+pointer getStackBottom (__attribute__ ((unused)) GC_state s, GC_stack stack) {
   pointer res;
 
   res = ((pointer)stack) + sizeof (struct GC_stack);
@@ -82,6 +81,13 @@ GC_frameIndex getCachedStackTopFrameIndex (GC_state s) {
   return res;
 }
 
+GC_frameLayout getCachedStackTopFrameLayout (GC_state s) {
+  GC_frameLayout layout;
+
+  layout = getFrameLayoutFromFrameIndex (s, getCachedStackTopFrameIndex (s));
+  return layout;
+}
+
 GC_frameIndex getStackTopFrameIndex (GC_state s, GC_stack stack) {
   GC_frameIndex res;
 
@@ -118,7 +124,8 @@ size_t alignStackReserved (GC_state s, size_t reserved) {
   return res;
 }
 
-size_t sizeofStackWithHeader (ARG_USED_FOR_ASSERT GC_state s, size_t reserved) {
+size_t sizeofStackWithHeader (__attribute__ ((unused)) GC_state s,
+                              size_t reserved) {
   size_t res;
 
   assert (isStackReservedAligned (s, reserved));
@@ -140,7 +147,7 @@ size_t sizeofStackInitialReserved (GC_state s) {
 size_t sizeofStackMinimumReserved (GC_state s, GC_stack stack) {
   size_t res;
 
-  res = alignStackReserved (s, 
+  res = alignStackReserved (s,
                             stack->used
                             + sizeofStackSlop (s)
                             - getStackTopFrameSize (s, stack));
@@ -155,7 +162,7 @@ size_t sizeofStackGrowReserved (GC_state s, GC_stack stack) {
   assert (isStackReservedAligned (s, stack->reserved));
   reservedD = (double)(stack->reserved);
   double reservedGrowD =
-    (double)s->controls.ratios.stackCurrentGrow * reservedD;
+    (double)s->controls->ratios.stackCurrentGrow * reservedD;
   reservedGrow =
     reservedGrowD > (double)RESERVED_MAX
     ? RESERVED_MAX
@@ -179,13 +186,13 @@ size_t sizeofStackShrinkReserved (GC_state s, GC_stack stack, bool current) {
   if (current) {
     /* Shrink current stacks. */
     double reservedMaxD =
-      (double)(s->controls.ratios.stackCurrentMaxReserved) * usedD;
+      (double)(s->controls->ratios.stackCurrentMaxReserved) * usedD;
     reservedMax =
       reservedMaxD > (double)RESERVED_MAX
       ? RESERVED_MAX
       : (size_t)reservedMaxD;
     double reservedPermitD =
-      (double)(s->controls.ratios.stackCurrentPermitReserved) * usedD;
+      (double)(s->controls->ratios.stackCurrentPermitReserved) * usedD;
     size_t reservedPermit =
       reservedPermitD > (double)RESERVED_MAX
       ? RESERVED_MAX
@@ -193,18 +200,18 @@ size_t sizeofStackShrinkReserved (GC_state s, GC_stack stack, bool current) {
     reservedShrink =
       (stack->reserved <= reservedPermit)
       ? stack->reserved
-      : (size_t)((double)(s->controls.ratios.stackCurrentShrink) * reservedD);
+      : (size_t)((double)(s->controls->ratios.stackCurrentShrink) * reservedD);
     reservedMin = sizeofStackMinimumReserved (s, stack);
   } else {
     /* Shrink paused stacks. */
     double reservedMaxD =
-      (double)(s->controls.ratios.stackMaxReserved) * usedD;
+      (double)(s->controls->ratios.stackMaxReserved) * usedD;
     reservedMax =
       reservedMaxD > (double)RESERVED_MAX
       ? RESERVED_MAX
       : (size_t)reservedMaxD;
     reservedShrink =
-      (size_t)((double)s->controls.ratios.stackShrink * reservedD);
+      (size_t)((double)s->controls->ratios.stackShrink * reservedD);
     reservedMin = stack->used;
   }
   reservedNew =

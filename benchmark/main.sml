@@ -1,6 +1,4 @@
-(* Copyright (C) 2013,2014 Matthew Fluet.
- * Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -14,13 +12,13 @@ struct
 type int = Int.t
 
 fun usage msg =
-   Process.usage {usage = "[-mlkit] [-mlton </path/to/mlton>] [-mosml] [-poly] [-smlnj] bench1 bench2 ...",
+   Process.usage {usage = "[-mlkit] [-mosml] [-smlnj] bench1 bench2 ...",
                   msg = msg}
 
 val doOnce = ref false
 val doWiki = ref false
 val runArgs : string list ref = ref []
-   
+
 fun withInput (file, f: unit -> 'a): 'a =
    let
       open FileDesc
@@ -55,7 +53,7 @@ fun ignoreOutput f =
 datatype command =
    Explicit of {args: string list,
                 com: string}
-  | Shell of string list
+  | Shell of string
 
 fun timeIt ca =
    Process.time
@@ -63,13 +61,13 @@ fun timeIt ca =
     case ca of
        Explicit {args, com} =>
           Process.wait (Process.spawnp {file = com, args = com :: args})
-     | Shell ss => List.foreach (ss, Process.system))
-   
+     | Shell s => Process.system s)
+
 local
    val trialTime = Time.seconds (IntInf.fromInt 60)
 in
    fun timeCall (com, args): real =
-      let 
+      let
          fun doit ac =
             let
                val {user, system} = timeIt (Explicit {args = args, com = com})
@@ -80,65 +78,71 @@ in
             if Time.> (ac, trialTime)
                then Time.toReal ac / Real.fromInt n
             else loop (n + 1, doit ac)
-      in 
+      in
          if !doOnce
             then Time.toReal (doit Time.zero)
          else loop (0, Time.zero)
       end
 end
 
-val benchCounts: (string * int) list =
-   ("barnes-hut", 24576):: (* 31.32 sec *)
-   ("boyer", 12288):: (* 40.77 sec *)
-   ("checksum", 8192):: (* 31.33 sec *)
-   ("count-graphs", 16):: (* 35.35 sec *)
-   ("DLXSimulator", 256):: (* 30.68 sec *)
-   ("even-odd", 24):: (* 37.76 sec *)
-   ("fft", 12):: (* 35.31 sec *)
-   ("fib", 12):: (* 30.48 sec *)
-   ("flat-array", 32768):: (* 35.03 sec *)
-   ("hamlet", 384):: (* 44.55 sec *)
-   ("imp-for", 3072):: (* 30.25 sec *)
-   ("knuth-bendix", 3072):: (* 37.84 sec *)
-   ("lexgen", 2048):: (* 34.41 sec *)
-   ("life", 32):: (* 37.98 sec *)
-   ("logic", 256):: (* 39.00 sec *)
-   ("mandelbrot", 6):: (* 38.49 sec *)
-   ("matrix-multiply", 128):: (* 30.01 sec *)
-   ("md5", 96):: (* 41.23 sec *)
-   ("merge", 16384):: (* 39.13 sec *)
-   ("mlyacc", 3072):: (* 37.48 sec *)
-   ("model-elimination", 1572864):: (* 41.59 sec *)
-   ("mpuz", 96):: (* 30.01 sec *)
-   ("nucleic", 4096):: (* 31.90 sec *)
-   ("output1", 12):: (* 33.01 sec *)
-   ("peek", 2048):: (* 35.93 sec *)
-   ("psdes-random", 24):: (* 40.57 sec *)
-   ("ratio-regions", 1536):: (* 45.14 sec *)
-   ("ray", 1536):: (* 42.18 sec *)
-   ("raytrace", 96):: (* 37.27 sec *)
-   ("simple", 768):: (* 36.10 sec *)
-   ("smith-normal-form", 192):: (* 41.93 sec *)
-   ("tailfib", 512):: (* 35.36 sec *)
-   ("tak", 24):: (* 44.71 sec *)
-   ("tensor", 6):: (* 34.63 sec *)
-   ("tsp", 16):: (* 36.91 sec *)
-   ("tyan", 384):: (* 32.56 sec *)
-   ("vector-concat", 32):: (* 35.13 sec *)
-   ("vector-rev", 64):: (* 32.16 sec *)
-   ("vliw", 768):: (* 30.51 sec *)
-   ("wc-input1", 24576):: (* 41.69 sec *)
-   ("wc-scanStream", 24576):: (* 30.55 sec *)
-   ("zebra", 64):: (* 33.44 sec *)
-   ("zern", 12288):: (* 33.59 sec *)
-   nil
+val benchCounts: (string * int * int) list =
+   [("barnes-hut", 4096, 1024),
+    ("boyer", 3000, 1000),
+    ("checksum", 1500, 150),
+    ("count-graphs", 3, 1),
+    ("DLXSimulator", 50, 15),
+    ("fft", 256, 128),
+    ("fib", 6, 1),
+    ("flat-array", 6000, 1200),
+    ("hamlet", 100, 10),
+    ("imp-for", 1000, 300),
+    ("knuth-bendix", 500, 100),
+    ("lexgen", 300, 50),
+    ("life", 6, 2),
+    ("logic", 40, 7),
+    ("mandelbrot", 2, 1),
+    ("matrix-multiply", 20, 20),
+    ("md5", 30, 10),
+    ("merge", 4000, 1000),
+    ("mlyacc", 500, 150),
+    ("model-elimination", 0, 0),
+    ("mpuz", 20, 5),
+    ("nucleic", 500, 150),
+    ("output1", 3, 3),
+    ("peek", 1000, 100),
+    ("psdes-random", 3, 1),
+    ("ratio-regions", 1024, 512),
+    ("ray", 100, 30),
+    ("raytrace", 10, 3),
+    ("simple", 100, 20),
+    ("smith-normal-form", 6, 1),
+    ("tailfib", 200, 60),
+    ("tak", 4, 2),
+    ("tensor", 3, 1),
+    ("tsp", 4, 1),
+    ("tyan", 80, 13),
+    ("vector-concat", 10, 2),
+    ("vector-rev", 20, 20),
+    ("vliw", 150, 30),
+    ("wc-input1", 4000, 1000),
+    ("wc-scanStream", 6000, 2000),
+    ("zebra", 15, 3),
+    ("zern", 2000, 500)]
 
 val benchCount =
    String.memoize
    (fn s =>
-    case List.peek (benchCounts, fn (b, _) => b = s) of
+    case List.peek (benchCounts, fn (b, _, _) => b = s) of
        NONE => Error.bug (concat ["no benchCount for ", s])
-     | SOME (_, c) => Int.toString c)
+     | SOME (_, x86, sparc) =>
+          Int.toString
+          let
+             open MLton.Platform.Arch
+          in
+             case host of
+                Sparc => sparc
+              | _ => x86
+          end)
 
 fun compileSizeRun {command, exe, doTextPlusData: bool} =
    Escape.new
@@ -153,7 +157,7 @@ fun compileSizeRun {command, exe, doTextPlusData: bool} =
        val size =
           if doTextPlusData
              then
-                let 
+                let
                    val {text, data, ...} = Process.size exe
                 in SOME (Position.fromInt (text + data))
                 end
@@ -168,84 +172,40 @@ fun compileSizeRun {command, exe, doTextPlusData: bool} =
         size = size}
     end)
 
-fun batch {abbrv, bench} =
-   let
-      val abbrv =
-         String.translate
-         (abbrv, fn c =>
-          if Char.isAlphaNum c
-             then String.fromChar c
-          else "_")
-   in
-      concat [bench, ".", abbrv, ".batch.sml"]
-   end
+fun batch bench = concat [bench, ".batch.sml"]
 
 local
    val n = Counter.new 0
+   val exe = "a.out"
 in
    fun makeMLton commandPattern =
       case ChoicePattern.expand commandPattern of
          Result.No m => usage m
-       | Result.Yes cmds =>
+       | Result.Yes coms =>
             List.map
-            (cmds, fn cmd =>
-             let
-                val abbrv = "MLton" ^ (Int.toString (Counter.next n))
-             in
-                {name = cmd,
-                 abbrv = abbrv,
-                 test = (fn {bench} =>
-                         let
-                            val src = batch {abbrv = abbrv, bench = bench}
-                            val exe = String.dropSuffix (src, 4)
-                            val cmds = (concat [cmd, " -output ", exe, " ", src])::
-                                       (*(concat ["strip ", exe])::*)
-                                       nil
-                         in
-                            compileSizeRun
-                            {command = Shell cmds,
-                             exe = exe,
-                             doTextPlusData = true}
-                         end)}
-             end)
+            (coms, fn com =>
+             {name = com,
+              abbrv = "MLton" ^ (Int.toString (Counter.next n)),
+              test = (fn {bench} =>
+                      compileSizeRun
+                      {command = Shell (concat [com, " -output ", exe, " ", batch bench]),
+                       exe = exe,
+                       doTextPlusData = true})})
 end
 
 fun kitCompile {bench} =
-   compileSizeRun {command = Explicit {args = [batch {abbrv = "MLKit", bench = bench}],
+   compileSizeRun {command = Explicit {args = [batch bench],
                                        com = "mlkit"},
                    exe = "run",
                    doTextPlusData = true}
-   
+
 fun mosmlCompile {bench} =
    compileSizeRun
    {command = Explicit {args = ["-orthodox", "-standalone", "-toplevel",
-                                batch {abbrv = "Moscow ML", bench = bench}],
+                                batch bench],
                         com = "mosmlc"},
     exe = "a.out",
     doTextPlusData = false}
-
-val njSuffix =
-   Promise.delay
-   (fn () =>
-    let
-       val sml = "sml"
-       val suffix =
-           File.withTemp
-           (fn tmp =>
-            (File.withTempOut
-             (fn output =>
-              Out.output
-              (output, concat ["val tmp = TextIO.openOut(\"", tmp, "\");\n",
-                               "val _ = TextIO.output(tmp, SMLofNJ.SysInfo.getHeapSuffix());\n",
-                               "val _ = TextIO.closeOut(tmp);\n"]),
-              fn input =>
-              withInput
-              (input, fn () =>
-               Process.wait (Process.spawnp {file = sml, args = [sml]})))
-             ; In.withClose (In.openIn tmp, In.inputAll)))
-    in
-       suffix
-    end)
 
 fun njCompile {bench} =
    Escape.new
@@ -271,8 +231,17 @@ fun njCompile {bench} =
          handle _ => Escape.escape (e, {compile = NONE,
                                         run = NONE,
                                         size = NONE})
-       val suffix = Promise.force njSuffix
-       val heap = concat [bench, ".", suffix]
+       val suffix =
+                 let
+                   datatype z = datatype MLton.Platform.Arch.t
+                   datatype z = datatype MLton.Platform.OS.t
+                 in
+                   case (MLton.Platform.Arch.host, MLton.Platform.OS.host) of
+                     (X86, Linux) => ".x86-linux"
+                   | (Sparc, Solaris) => ".sparc-solaris"
+                   | _ => raise Fail "don't know SML/NJ suffix for host type"
+                 end
+       val heap = concat [bench, suffix]
     in
        if not (File.doesExist heap)
           then {compile = NONE,
@@ -292,7 +261,7 @@ fun njCompile {bench} =
               size = size}
           end
     end)
-                
+
 fun polyCompile {bench} =
    Escape.new
    (fn e =>
@@ -351,7 +320,7 @@ fun main args =
                       abbrv: string,
                       test: {bench: File.t} -> {compile: real option,
                                                 run: real option,
-                                                size: Position.int option}} list ref 
+                                                size: Position.int option}} list ref
         = ref []
       fun pushCompiler compiler = List.push(compilers, compiler)
       fun pushCompilers compilers' = compilers := (List.rev compilers') @ (!compilers)
@@ -369,14 +338,14 @@ fun main args =
          in
             case Compiled.matchAll (reC, str) of
                NONE => die ()
-             | SOME match => 
+             | SOME match =>
                   let
                      val num = Match.lookupString (match, numSave)
                      val num = case Int.fromString num of
                                   NONE => die ()
                                 | SOME num => num
                      val regexp = Match.lookupString (match, regexpSave)
-                     val (regexp, saves) = 
+                     val (regexp, saves) =
                         case Regexp.fromString regexp of
                            NONE => die ()
                          | SOME regexp => regexp
@@ -424,15 +393,15 @@ fun main args =
                       (fn args =>
                        runArgs := String.tokens (args, Char.isSpace))),
                      ("err", SpaceString setErrData),
-                     ("mlkit", 
+                     ("mlkit",
                       None (fn () => pushCompiler
-                            {name = "MLKit",
-                             abbrv = "MLKit",
+                            {name = "ML-Kit",
+                             abbrv = "ML-Kit",
                              test = kitCompile})),
                      ("mosml",
                       None (fn () => pushCompiler
-                            {name = "Moscow ML",
-                             abbrv = "Moscow ML",
+                            {name = "Moscow-ML",
+                             abbrv = "Moscow-ML",
                              test = mosmlCompile})),
                      ("mlton",
                       SpaceString (fn arg => pushCompilers
@@ -458,7 +427,7 @@ fun main args =
        | Result.Yes benchmarks =>
             let
                val compilers = List.rev (!compilers)
-               val base = #abbrv (hd compilers)
+               val base = #name (hd compilers)
                val _ =
                   let
                      open MLton.Signal
@@ -491,31 +460,33 @@ fun main args =
                            val _ = Out.output (out, concat [title, "\n"])
                            val compilers =
                               List.fold
-                              (compilers, [], fn ({name = n, abbrv = a, ...}, ac) =>
+                              (compilers, [],
+                               fn ({name = n, abbrv = n', ...}, ac) =>
                                if showAll
-                                  orelse List.exists (data, fn {compiler = c', ...} =>
-                                                      a = c')
-                                  then (n, a) :: ac
+                                  orelse (List.exists
+                                          (data, fn {compiler = c, ...} =>
+                                           n = c))
+                                  then (n, n') :: ac
                                else ac)
                            val benchmarks =
                               List.fold
                               (benchmarks, [], fn (b, ac) =>
                                if showAll
-                                  orelse List.exists (data, fn {bench = b', ...} =>
-                                                      b = b')
+                                  orelse List.exists (data, fn {bench, ...} =>
+                                                      bench = b)
                                   then b :: ac
                                else ac)
                            fun rows toString =
                               ("benchmark"
-                               :: List.revMap (compilers, fn (_, a) => a))
+                               :: List.revMap (compilers, fn (_, n') => n'))
                               :: (List.revMap
                                   (benchmarks, fn b =>
                                    b :: (List.revMap
-                                         (compilers, fn (_, a) =>
+                                         (compilers, fn (n, _) =>
                                           case (List.peek
                                                 (data, fn {bench = b',
                                                            compiler = c', ...} =>
-                                                 b = b' andalso a = c')) of
+                                                 b = b' andalso n = c')) of
                                              NONE => "*"
                                            | SOME {value = v, ...} =>
                                                 toString v))))
@@ -547,14 +518,14 @@ fun main args =
                               else
                                  let
                                     val rows = rows toStringHtml
-                                 in                                       
+                                 in
                                     prow (hd rows)
                                     ; (List.foreach
                                        (tl rows,
                                         fn [] => raise Fail "bug"
                                          | b :: r =>
                                               let
-                                                 val b = 
+                                                 val b =
                                                     concat
                                                     ["[attachment:",
                                                      b, ".sml ", b, "]"]
@@ -595,16 +566,23 @@ fun main args =
                   in ()
                   end
                val totalFailures = ref []
-               val data = 
+               val data =
                   List.fold
                   (benchmarks, {compiles = [], runs = [], sizes = [],
                                 outs = [], errs = []},
                    fn (bench, ac) =>
                    let
+                      val _ =
+                         File.withOut
+                         (batch bench, fn out =>
+                          (File.outputContents (concat [bench, ".sml"], out)
+                           ; Out.output (out, concat ["val _ = Main.doit ",
+                                                      benchCount bench,
+                                                      "\n"])))
                       val foundOne = ref false
                       val res =
                          List.fold
-                         (compilers, ac, fn ({name, abbrv, test},
+                         (compilers, ac, fn ({name, abbrv = _, test},
                                              ac as {compiles: real data,
                                                     runs: real data,
                                                     sizes: Position.int data,
@@ -613,13 +591,6 @@ fun main args =
                           if true
                              then
                                 let
-                                   val _ =
-                                      File.withOut
-                                      (batch {abbrv = abbrv, bench = bench}, fn out =>
-                                       (File.outputContents (concat [bench, ".sml"], out)
-                                        ; Out.output (out, concat ["val _ = Main.doit ",
-                                                                   benchCount bench,
-                                                                   "\n"])))
 (*
                                    val outTmpFile =
                                       File.tempName {prefix = "tmp", suffix = "out"}
@@ -635,28 +606,28 @@ fun main args =
                                          then List.push (failures, bench)
                                       else ()
 (*
-                                   val out = 
-                                      case !outData of 
+                                   val out =
+                                      case !outData of
                                          NONE => NONE
-                                       | SOME (_, doit) => 
+                                       | SOME (_, doit) =>
                                             File.foldLines
                                             (outTmpFile, NONE, fn (s, v) =>
                                              let val s = String.removeTrailing
-                                                         (s, fn c => 
+                                                         (s, fn c =>
                                                           Char.equals (c, Char.newline))
                                              in
                                                 case doit s of
                                                    NONE => v
                                                  | v => v
                                              end)
-                                   val err = 
-                                      case !errData of 
+                                   val err =
+                                      case !errData of
                                          NONE => NONE
                                        | SOME (_, doit) =>
                                             File.foldLines
                                             (errTmpFile, NONE, fn (s, v) =>
                                              let val s = String.removeTrailing
-                                                         (s, fn c => 
+                                                         (s, fn c =>
                                                           Char.equals (c, Char.newline))
                                              in
                                                 case doit s of
@@ -674,7 +645,7 @@ fun main args =
                                        | SOME v =>
                                             (foundOne := true
                                              ; {bench = bench,
-                                                compiler = abbrv,
+                                                compiler = name,
                                                 value = v} :: ac)
                                    val ac =
                                       {compiles = add (compile, compiles),

@@ -8,6 +8,7 @@
 #define MAP_ANON MAP_ANONYMOUS
 
 #include "diskBack.unix.c"
+#include "mkdir2.c"
 #include "mmap-protect.c"
 #include "nonwin.c"
 #include "recv.nonblock.c"
@@ -81,10 +82,10 @@ void GC_displayMem (void) {
 }
 
 
-static void catcher (__attribute__ ((unused)) int signo,
-                     __attribute__ ((unused)) siginfo_t* info,
-                     void* context) {
-        ucontext_t* ucp = (ucontext_t*)context;
+static void catcher (__attribute__ ((unused)) int sig,
+                     __attribute__ ((unused)) siginfo_t* sip,
+                     void* mystery) {
+        ucontext_t* ucp = (ucontext_t*)mystery;
         GC_handleSigProf ((code_pointer) (ucp->uc_link));
 }
 
@@ -103,12 +104,10 @@ size_t GC_pageSize (void) {
 
 uintmax_t GC_physMem (void) {
         struct pst_static buf;
-        uintmax_t physMem;
 
         if (pstat_getstatic (&buf, sizeof (buf), 1, 0) < 0)
                 diee ("failed to get physical memory size");
-        physMem = (uintmax_t)buf.physical_memory * (uintmax_t)buf.page_size;
-        return physMem;
+        return buf.physical_memory * buf.page_size;
 }
 
 #ifdef __hppa__

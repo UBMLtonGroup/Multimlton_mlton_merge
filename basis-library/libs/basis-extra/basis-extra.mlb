@@ -5,7 +5,7 @@
  * See the file MLton-LICENSE for details.
  *)
 
-ann  
+ann
    "deadCode true"
    "sequenceNonUnit warn"
    "nonexhaustiveMatch warn" "redundantMatch warn"
@@ -17,13 +17,13 @@ in
       top-level/basis.sig
       ann
          "allowRebindEquals true"
-      in 
-         top-level/basis.sml 
+      in
+         top-level/basis.sml
       end
    in
-      structure BasisExtra 
+      structure BasisExtra
       top-level/basis-sigs.sml
       top-level/basis-funs.sml
-      top-level/top-level.sml 
+      top-level/top-level.sml
    end
 end

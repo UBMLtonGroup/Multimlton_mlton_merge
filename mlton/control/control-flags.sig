@@ -1,5 +1,4 @@
-(* Copyright (C) 2009-2012,2014 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,12 +6,14 @@
  * See the file MLton-LICENSE for details.
  *)
 
+type int = Int.t
+
 signature CONTROL_FLAGS =
    sig
       (* set all flags to their default values *)
       val defaults: unit -> unit
 
-      val all : unit -> {name: string, 
+      val all : unit -> {name: string,
                          value: string} list
 
       (*------------------------------------*)
@@ -23,6 +24,9 @@ signature CONTROL_FLAGS =
       val align: align ref
 
       val atMLtons: string vector ref
+
+      (* build identifies the machine on which this MLton was built. *)
+      val build: string
 
       datatype chunk =
          OneChunk
@@ -37,10 +41,10 @@ signature CONTROL_FLAGS =
       structure Codegen:
          sig
             datatype t =
-               AMD64Codegen
+               Bytecode
              | CCodegen
-             | LLVMCodegen
-             | X86Codegen
+             | x86Codegen
+             | amd64Codegen
             val all: t list
             val toString: t -> string
          end
@@ -81,14 +85,6 @@ signature CONTROL_FLAGS =
                      Default
                    | Ignore
                end
-            structure ResolveScope :
-               sig
-                  datatype t =
-                     Dec
-                   | Strdec
-                   | Topdec
-                   | Program
-               end
 
             type ('args, 'st) t
 
@@ -105,7 +101,6 @@ signature CONTROL_FLAGS =
             val nonexhaustiveExnMatch: (DiagDI.t,DiagDI.t) t
             val nonexhaustiveMatch: (DiagEIW.t,DiagEIW.t) t
             val redundantMatch: (DiagEIW.t,DiagEIW.t) t
-            val resolveScope: (ResolveScope.t,ResolveScope.t) t
             val sequenceNonUnit: (DiagEIW.t,DiagEIW.t) t
             val warnUnused: (bool,bool) t
 
@@ -161,7 +156,7 @@ signature CONTROL_FLAGS =
             val all: t list
             val toString: t -> string
          end
-      
+
       datatype format = datatype Format.t
 
       val format: Format.t ref
@@ -188,7 +183,7 @@ signature CONTROL_FLAGS =
 
       (* Whether or not the elaborator keeps def-use information. *)
       val keepDefUse: bool ref
-         
+
       (* Keep dot files for whatever SSA files are produced. *)
       val keepDot: bool ref
 
@@ -220,7 +215,7 @@ signature CONTROL_FLAGS =
 
       (* lib/mlton/target directory *)
       val libTargetDir: Dir.t ref
-      
+
       (* name of the output library *)
       val libname : string ref
 
@@ -243,7 +238,7 @@ signature CONTROL_FLAGS =
             val commented: int ref
 
             (* whether or not to track liveness of stack slots *)
-            val liveStack: bool ref 
+            val liveStack: bool ref
 
             (* level of optimization to use in native codegen *)
             val optimize: int ref
@@ -258,10 +253,10 @@ signature CONTROL_FLAGS =
             val copyPropCutoff: int ref
 
             (* live transfer cutoff distance *)
-            val cutoff: int ref 
+            val cutoff: int ref
 
             (* whether or not to use live transfer in native codegen *)
-            val liveTransfer: int ref 
+            val liveTransfer: int ref
 
             (* whether or not to shuffle registers around C-calls *)
             val shuffle: bool ref
@@ -275,12 +270,16 @@ signature CONTROL_FLAGS =
 
       val optimizationPasses:
          {il: string, set: string -> unit Result.t, get: unit -> string} list ref
-      
+
       val positionIndependent : bool ref
 
       (* Only duplicate big functions when
        * (size - small) * (number of occurrences - 1) <= product
        *)
+
+      (* Number of cores to use for compilation *)
+      val parallelCompile : int ref
+
       val polyvariance:
          {
           hofo: bool,
@@ -370,16 +369,17 @@ signature CONTROL_FLAGS =
       (* Type check ILs. *)
       val typeCheck: bool ref
 
-      datatype verbosity = 
+      datatype verbosity =
          Silent
        | Top
        | Pass
        | Detail
       val verbosity: verbosity ref
 
-      val warnAnn: bool ref
+      (* version number *)
+      val version: string
 
-      val warnDeprecated: bool ref
+      val warnAnn: bool ref
 
       val zoneCutDepth: int ref
 

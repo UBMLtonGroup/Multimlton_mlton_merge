@@ -1,5 +1,4 @@
-(* Copyright (C) 2012 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -2017,21 +2016,13 @@ struct
              | SSE_CVTSFP2SI {src, srcsize, dst, dstsize, ...}
              => bin (str "cvt",
                      seq [str "s", Size.layout srcsize,
-                          str "2", str "si",
-                          case dstsize of
-                             Size.LONG => empty
-                           | Size.QUAD => Size.layout dstsize
-                           | _ => Error.bug "amd64.Instruction.layout: SSE_CVTSFP2SI,unsupported conversion"],
+                          str "2", str "si", Size.layout dstsize],
                      Operand.layout src,
                      Operand.layout dst)
              | SSE_CVTSI2SFP {src, srcsize, dst, dstsize, ...}
              => bin (str "cvt",
                      seq [str "si", 
-                          str "2", str "s", Size.layout dstsize,
-                          case srcsize of
-                             Size.LONG => empty
-                           | Size.QUAD => Size.layout srcsize
-                           | _ => Error.bug "amd64.Instruction.layout: SSE_CVTSI2SFP,unsupported conversion"],
+                          str "2", str "s", Size.layout dstsize, Size.layout srcsize],
                      Operand.layout src,
                      Operand.layout dst)
              | SSE_MOVD {src, dst, ...}

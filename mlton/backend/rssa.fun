@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -45,7 +44,9 @@ structure Operand =
        | Cast of t * Type.t
        | Const of Const.t
        | EnsuresBytesFree
+       | File
        | GCState
+       | Line
        | Offset of {base: t,
                     offset: Bytes.t,
                     ty: Type.t}
@@ -78,7 +79,9 @@ structure Operand =
                    | WordVector v => Type.ofWordXVector v
                end
           | EnsuresBytesFree => Type.csize ()
+          | File => Type.cpointer ()
           | GCState => Type.gcState ()
+          | Line => Type.cint ()
           | Offset {ty, ...} => ty
           | ObjptrTycon _ => Type.objptrHeader ()
           | Runtime z => Type.ofGCField z
@@ -97,7 +100,9 @@ structure Operand =
                   seq [str "Cast ", tuple [layout z, Type.layout ty]]
              | Const c => seq [Const.layout c, constrain (ty z)]
              | EnsuresBytesFree => str "<EnsuresBytesFree>"
+             | File => str "<File>"
              | GCState => str "<GCState>"
+             | Line => str "<Line>"
              | Offset {base, offset, ty} =>
                   seq [str (concat ["O", Type.name ty, " "]),
                        tuple [layout base, Bytes.layout offset],
@@ -1527,7 +1532,9 @@ structure Program =
                                              tyconTy = tyconTy})
                        | Const _ => true
                        | EnsuresBytesFree => true
+                       | File => true
                        | GCState => true
+                       | Line => true
                        | Offset {base, offset, ty} =>
                             Type.offsetIsOk {base = Operand.ty base,
                                              offset = offset,

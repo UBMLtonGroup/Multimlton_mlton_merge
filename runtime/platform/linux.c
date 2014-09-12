@@ -3,62 +3,56 @@
 #include "platform.h"
 
 #include "diskBack.unix.c"
-#include "displayMem.proc.c"
+#include "mkdir2.c"
+#include "displayMem.linux.c"
 #include "mmap-protect.c"
 #include "nonwin.c"
+#include "sysconf.c"
 #include "use-mmap.c"
 
-static void catcher (__attribute__ ((unused)) int signo,
-                     __attribute__ ((unused)) siginfo_t* info,
-                     void* context) {
+#ifndef EIP
+#define EIP     14
+#endif
+
+/* potentially correct for other archs:
+ *  alpha: ucp->m_context.sc_pc
+ *  arm: ucp->m_context.ctx.arm_pc
+ *  ia64: ucp->m_context.sc_ip & ~0x3UL
+ *  s390: ucp->m_context.sregs->regs.psw.addr
+ */
+static void catcher (__attribute__ ((unused)) int sig,
+                     __attribute__ ((unused)) siginfo_t* sip,
+                     void* mystery) {
 #if (defined (__x86_64__))
-#ifndef REG_RIP
 #define REG_INDEX(NAME) (offsetof(struct sigcontext, NAME) / sizeof(greg_t))
+#ifndef REG_RIP
 #define REG_RIP REG_INDEX(rip) /* seems to be 16 */
 #endif
-        ucontext_t* ucp = (ucontext_t*)context;
+        ucontext_t* ucp = (ucontext_t*)mystery;
         GC_handleSigProf ((code_pointer) ucp->uc_mcontext.gregs[REG_RIP]);
-#elif (defined (__alpha__))
-        ucontext_t* ucp = (ucontext_t*)context;
-        GC_handleSigProf ((code_pointer) (ucp->uc_mcontext.sc_pc));
 #elif (defined (__hppa__))
-        ucontext_t* ucp = (ucontext_t*)context;
+        ucontext_t* ucp = (ucontext_t*)mystery;
         GC_handleSigProf ((code_pointer) (ucp->uc_mcontext.sc_iaoq[0] & ~0x3UL));
-#elif (defined(__ia64__))
-        ucontext_t* ucp = (ucontext_t*)context;
-        GC_handleSigProf ((code_pointer) ucp->_u._mc.sc_ip);
 #elif (defined (__ppc__)) || (defined (__powerpc__))
-        ucontext_t* ucp = (ucontext_t*)context;
+        ucontext_t* ucp = (ucontext_t*)mystery;
         GC_handleSigProf ((code_pointer) ucp->uc_mcontext.regs->nip);
 #elif (defined (__sparc__))
-        struct sigcontext* scp = (struct sigcontext*)context;
+        struct sigcontext* scp = (struct sigcontext*)mystery;
 #if __WORDSIZE == 64
         GC_handleSigProf ((code_pointer) scp->sigc_regs.tpc);
 #else
         GC_handleSigProf ((code_pointer) scp->si_regs.pc);
 #endif
 #elif (defined (__mips__))
-        ucontext_t* ucp = (ucontext_t*)context;
+        ucontext_t* ucp = (ucontext_t*)mystery;
 #ifdef __UCLIBC__
         GC_handleSigProf ((code_pointer) ucp->uc_mcontext.gpregs[CTX_EPC]);
 #else
         GC_handleSigProf ((code_pointer) ucp->uc_mcontext.pc);
 #endif
 #elif (defined (__i386__))
-#ifndef EIP
-#define EIP     14
-#endif
-        ucontext_t* ucp = (ucontext_t*)context;
+        ucontext_t* ucp = (ucontext_t*)mystery;
         GC_handleSigProf ((code_pointer) ucp->uc_mcontext.gregs[EIP]);
-#elif (defined (__arm__))
-        ucontext_t* ucp = (ucontext_t*)context;
-        GC_handleSigProf ((code_pointer) ucp->uc_mcontext.arm_pc);
-#elif (defined (__aarch64__))
-        ucontext_t* ucp = (ucontext_t*)context;
-        GC_handleSigProf ((code_pointer) ucp->uc_mcontext.pc);
-#elif (defined (__s390__))
-        ucontext_t* ucp = (ucontext_t*)context;
-        GC_handleSigProf ((code_pointer) ucp->uc_mcontext.psw.addr);
 #else
 #error Profiling handler is missing for this architecture
 #endif
@@ -82,21 +76,3 @@ void *GC_mremap (void *start, size_t oldLength, size_t newLength) {
         return mremap (start, oldLength, newLength, MREMAP_MAYMOVE);
 }
 
-size_t GC_pageSize (void) {
-        long int pageSize;
-
-        pageSize = sysconf (_SC_PAGESIZE);
-        if (pageSize < 0)
-                diee ("GC_pageSize error: sysconf (_SC_PAGESIZE) failed");
-
-        return (size_t)pageSize;
-}
-
-/* sysconf(_SC_PHYS_PAGES) is not portable (mipsel uclibc) */
-uintmax_t GC_physMem (void) {
-        struct sysinfo si;
-        if (sysinfo(&si) < 0)
-                diee ("GC_physMem error: sysinfo failed");
-        
-        return (uintmax_t)si.totalram * (uintmax_t)si.mem_unit;
-}

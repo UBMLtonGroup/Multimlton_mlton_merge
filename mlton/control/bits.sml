@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 2004-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2004-2007 Henry Cejtin, Matthew Fluet, Suresh 
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -7,6 +6,8 @@
  *)
 
 local
+   type int = Int.t
+   type word = Word.t
    structure All:>
       sig
          type bits
@@ -76,6 +77,7 @@ local
                val equals: t * t -> bool
                val fromInt: int -> t
                val fromIntInf: IntInf.t -> t
+               val fromWord: word -> t
                (* val inWord8: t *)
                (* val inWord16: t *)
                val inWord32: t
@@ -92,6 +94,7 @@ local
                val toInt: t -> int
                val toIntInf: t -> IntInf.t
                val toString: t -> string
+               val toWord: t -> word
                val zero: t
             end
 
@@ -155,6 +158,8 @@ local
                val inWord32: bytes = 4
                val inWord64: bytes = 8
 
+               val fromWord = Word.toIntInf
+
                fun isAligned (b, {alignment = a}) = 0 = rem (b, a)
                (* fun isWord8Aligned b = isAligned (b, {alignment = inWord8}) *)
                (* fun isWord16Aligned b = isAligned (b, {alignment = inWord16}) *)
@@ -162,6 +167,8 @@ local
                (* fun isWord64Aligned b = isAligned (b, {alignment = inWord64}) *)
 
                fun toBits b = b * Bits.inByte
+
+               val toWord = Word.fromIntInf
 
                val align = align
                (* val alignDown = alignDown *)

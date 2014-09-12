@@ -1,5 +1,4 @@
-(* Copyright (C) 2009,2011 Matthew Fluet.
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -9,6 +8,8 @@
 
 functor Shrink (S: SHRINK_STRUCTS): SHRINK = 
 struct
+
+type int = Int.t
 
 open S
 
@@ -460,17 +461,7 @@ fun shrinkFunction {globals: Statement.t vector} =
                                              Goto {canMove = canMove',
                                                    dst = m,
                                                    args = ps}
-                                        | Bug =>
-                                             if (case returns of
-                                                    NONE => true
-                                                  | SOME ts =>
-                                                       Vector.equals
-                                                       (ts, args, fn (t, (_, t')) =>
-                                                        Type.equals (t, t')))
-                                                then Bug
-                                             else Goto {canMove = canMove',
-                                                        dst = m,
-                                                        args = ps}
+                                        | Bug => Bug
                                         | Case _ => 
                                              Goto {canMove = canMove',
                                                    dst = m,
@@ -717,7 +708,7 @@ fun shrinkFunction {globals: Statement.t vector} =
                                         Transfer.layout))
          val traceSimplifyCase =
             Trace.trace
-            ("Ssa.Shrink2.simplifyCase",
+            ("Ssa2.Shrink2.simplifyCase",
              fn {canMove, cases, default, test, ...} =>
              Layout.record [("canMove", List.layout Statement.layout canMove),
                             ("cantSimplify", Layout.str "fn () => ..."),

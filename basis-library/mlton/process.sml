@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 2002-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2002-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -138,23 +137,18 @@ structure MLtonProcess =
                   then ()
                else IO.setfd (fd, IO.FD.flags [IO.FD.cloexec])
 
-            local
-               fun openOut std p =
-                  case p of 
-                     File s => (FileSys.creat (s, readWrite), Child.Term)
-                   | FileDesc f => (f, Child.Term)
-                   | Pipe =>
-                        let
-                           val {infd, outfd} = IO.pipe ()
-                           val () = setCloseExec infd
-                        in
-                           (outfd, Child.FileDesc infd)
-                        end
-                   | Self => (std, Child.Term)
-            in
-               fun openStdout p = openOut FileSys.stdout p
-               fun openStderr p = openOut FileSys.stderr p
-            end
+            fun openOut std p =
+               case p of 
+                  File s => (FileSys.creat (s, readWrite), Child.Term)
+                | FileDesc f => (f, Child.Term)
+                | Pipe =>
+                     let
+                        val {infd, outfd} = IO.pipe ()
+                        val () = setCloseExec infd
+                     in
+                        (outfd, Child.FileDesc infd)
+                     end
+                | Self => (std, Child.Term)
 
             fun openStdin p =
                case p of
@@ -180,11 +174,7 @@ structure MLtonProcess =
         end
 
       datatype ('stdin, 'stdout, 'stderr) t =
-         T of {pid: Process.pid, (* if useWindowsProcess, 
-                                  * then this is a Windows process handle 
-                                  * and can't be passed to
-                                  * Posix.Process.* functions. 
-                                  *)
+         T of {pid: Process.pid,
                status: Posix.Process.exit_status option ref,
                stderr: ('stderr, input) Child.t,
                stdin:  ('stdin, output) Child.t,
@@ -199,101 +189,64 @@ structure MLtonProcess =
       end
 
       fun ('a, 'b) protect (f: 'a -> 'b, x: 'a): 'b =
-         let
-            val () = Mask.block Mask.all
-         in
-            DynamicWind.wind (fn () => f x, fn () => Mask.unblock Mask.all)
-         end
+         if useWindowsProcess then f x
+         else
+            let
+               val () = Mask.block Mask.all
+            in
+               DynamicWind.wind (fn () => f x, fn () => Mask.unblock Mask.all)
+            end
 
-      local
-         fun reap reapFn (T {pid, status, stderr, stdin, stdout, ...}) =
-            case !status of
-               NONE =>
-                  let
-                     val _ = Child.close (!stdin, !stdout, !stderr)
-                     val st = reapFn pid
-                  in
-                     status := SOME st
-                     ; st
-                  end
-             | SOME st => st
-      in
-         fun reapForFork p =
-            reap (fn pid =>
-                  let
-                     (* protect is probably too much; typically, one
-                      * would only mask SIGINT, SIGQUIT and SIGHUP.
-                      *)
-                     val (_, st) =
-                        protect (Process.waitpid, (Process.W_CHILD pid, []))
-                  in
-                     st
-                  end) 
-                  p
-         fun reapForCreate p =
-            reap (fn pid =>
-                  let
-                     val pid' = PId.toRep pid
-                     val status' = ref (C_Status.fromInt 0)
-                     val () =
-                        SysCall.simple
-                        (fn () =>
-                         PrimitiveFFI.Windows.Process.getexitcode 
-                         (pid', status'))
-                  in
-                     Process.fromStatus' (!status')
-                  end)
-                 p
-      end
-      val reap = fn p =>
-         (if useWindowsProcess then reapForCreate else reapForFork) p
+      fun reap (T {pid, status, stderr, stdin, stdout}) =
+         case !status of
+            NONE => 
+               let
+                  val _ = Child.close (!stdin, !stdout, !stderr)
+                  (* protect is probably too much; typically, one
+                   * would only mask SIGINT, SIGQUIT and SIGHUP
+                   *)
+                  val (_, st) =
+                     protect (Process.waitpid, (Process.W_CHILD pid, []))
+                  val () = status := SOME st
+               in
+                  st
+               end
+          | SOME status => status
 
-      local
-         fun kill killFn (p as T {pid, status, ...}, signal) =
-            case !status of
-               NONE =>
-                  let
-                     val () = killFn (pid, signal)
-                  in
-                     ignore (reap p)
-                  end
-             | SOME _ => ()
-      in
-         fun killForFork p =
-            kill (fn (pid, signal) =>
-                  Process.kill (Process.K_PROC pid, signal))
-                 p
-         fun killForCreate p =
-            kill (fn (pid, signal) =>
-                  SysCall.simple
-                  (fn () =>
-                   PrimitiveFFI.Windows.Process.terminate 
-                   (PId.toRep pid, Signal.toRep signal)))
-                 p
-      end
-      val kill = fn (p, signal) =>
-         (if useWindowsProcess then killForCreate else killForFork) (p, signal)
+      fun kill (p as T {pid, status, ...}, signal) =
+        case !status of
+           NONE =>
+              let
+                 val pid' = PId.toRep pid
+                 val signal' = Signal.toRep signal
+                 val () =
+                    if useWindowsProcess
+                       then
+                          SysCall.simple
+                          (fn () =>
+                           PrimitiveFFI.Windows.Process.terminate (pid', signal'))
+                    else Process.kill (Process.K_PROC pid, signal)
+              in
+                 ignore (reap p)
+              end
+         | SOME _ => ()
 
       fun launchWithFork (path, args, env, stdin, stdout, stderr) =
          case protect (Process.fork, ()) of
             NONE => (* child *)
                let 
+                  val base =
+                     Substring.string
+                     (Substring.taker (fn c => c <> #"/") (Substring.full path))
                   fun dup2 (old, new) =
                      if old = new
                         then ()
                      else (IO.dup2 {old = old, new = new}; IO.close old)
-                  val args = path :: args
-                  val execTh =
-                     case env of
-                        NONE =>
-                           (fn () => Process.exec (path, args))
-                      | SOME env =>
-                           (fn () => Process.exece (path, args, env))
                in
                   dup2 (stdin, FileSys.stdin)
                   ; dup2 (stdout, FileSys.stdout)
                   ; dup2 (stderr, FileSys.stderr)
-                  ; ignore (execTh ())
+                  ; ignore (Process.exece (path, base :: args, env))
                   ; Process.exit 0w127 (* just in case *)
                end
           | SOME pid => pid (* parent *)
@@ -316,6 +269,11 @@ structure MLtonProcess =
          if not (strContains " \t\"" y) andalso y<>"" then y else
          String.implode (List.rev (#"\"" :: mingwQuote y))
 
+      (* In cygwin, according to what I read, \ should always become \\.
+       * Furthermore, more characters cause escaping as compared to MinGW. 
+       * From what I read, " should become "", not \", but I leave the old
+       * behaviour alone until someone runs the spawn regression.
+       *)
       fun cygwinEscape y = 
          if not (strContains " \t\"\r\n\f'" y) andalso y<>"" then y else
          concat ["\"",
@@ -323,56 +281,35 @@ structure MLtonProcess =
                  (fn #"\"" => "\\\"" | #"\\" => "\\\\" | x => String.str x) y,
                  "\""]
 
-      val cmdEscapeCreate = 
+      val cmdEscape = 
          if MLton.Platform.OS.host = MLton.Platform.OS.MinGW
          then mingwEscape else cygwinEscape
 
-      val cmdEscapeSpawn = 
-         if MLton.Platform.OS.host = MLton.Platform.OS.MinGW
-         then mingwEscape else (fn s => s)
-
-      fun launchWithCreate (path, args, env, stdin, stdout, stderr) =
-         let
-            val path' = 
-               NullString.nullTerm
-               (let 
+      fun create (cmd, args, env, stdin, stdout, stderr) =
+         SysCall.simpleResult'
+         ({errVal = C_PId.castFromFixedInt ~1}, fn () =>
+          let
+             val cmd =
+                let
                    open MLton.Platform.OS
                 in
                    case host of
-                      Cygwin => Cygwin.toFullWindowsPath path
-                    | MinGW => path
-                    | _ => raise Fail "MLton.Process.launchWithCreate: path'"
-                end)
-            val args' =
-               NullString.nullTerm 
-               (String.concatWith " " (List.map cmdEscapeCreate (path :: args)))
-            val env' =
-               Option.map 
-               (fn env =>
-                NullString.nullTerm 
-                ((String.concatWith "\000" env) ^ "\000"))
-               env
-            val stdin' = FileDesc.toRep stdin
-            val stdout' = FileDesc.toRep stdout
-            val stderr' = FileDesc.toRep stderr
-            val createTh =
-               case env' of
-                  NONE =>
-                     (fn () =>
-                      PrimitiveFFI.Windows.Process.createNull
-                      (path', args', stdin', stdout', stderr'))
-                | SOME env' =>
-                     (fn () =>
-                      PrimitiveFFI.Windows.Process.create
-                      (path', args', env', stdin', stdout', stderr'))
-            val pid' =
-               SysCall.simpleResult'
-               ({errVal = C_PId.castFromFixedInt ~1}, fn () =>
-                createTh ())
-            val pid = PId.fromRep pid'
-         in
-            pid
-         end
+                      Cygwin => Cygwin.toExe cmd
+                    | MinGW => cmd
+                    | _ => raise Fail "create"
+                end
+          in
+             PrimitiveFFI.Windows.Process.create
+             (NullString.nullTerm cmd, args, env, stdin, stdout, stderr)
+          end)
+
+      fun launchWithCreate (path, args, env, stdin, stdout, stderr) =
+         (PId.fromRep o create)
+         (path,
+          NullString.nullTerm (String.concatWith " "
+                               (List.map cmdEscape (path :: args))),
+          NullString.nullTerm (String.concatWith "\000" env ^ "\000"),
+          FileDesc.toRep stdin, FileDesc.toRep stdout, FileDesc.toRep stderr)
 
       val launch =
          fn z =>
@@ -384,9 +321,13 @@ structure MLtonProcess =
          else
             let
                val () = TextIO.flushOut TextIO.stdOut
+               val env =
+                  case env of
+                     NONE => ProcEnv.environ ()
+                   | SOME x => x
                val (fstdin, cstdin) = Param.openStdin stdin
-               val (fstdout, cstdout) = Param.openStdout stdout
-               val (fstderr, cstderr) = Param.openStderr stderr
+               val (fstdout, cstdout) = Param.openOut FileSys.stdout stdout
+               val (fstderr, cstderr) = Param.openOut FileSys.stderr stderr
                val closeStdio =
                   fn () => (Param.close stdin fstdin
                             ; Param.close stdout fstdout
@@ -409,7 +350,7 @@ structure MLtonProcess =
          if useWindowsProcess
             then
                let
-                  val args = List.map cmdEscapeSpawn args
+                  val args = List.map cmdEscape args
                   val path = NullString.nullTerm path
                   val args = CUtil.C_StringArray.fromList args
                   val env = CUtil.C_StringArray.fromList env
@@ -434,7 +375,7 @@ structure MLtonProcess =
             then
                let
                   val file = NullString.nullTerm file
-                  val args = List.map cmdEscapeSpawn args
+                  val args = List.map cmdEscape args
                   val args = CUtil.C_StringArray.fromList args
                in
                   (PId.fromRep o SysCall.simpleResult')

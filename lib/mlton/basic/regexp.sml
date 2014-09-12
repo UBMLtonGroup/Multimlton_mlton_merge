@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -11,6 +10,8 @@
  * which I will refer to in comments as the Dragon Book.
  *)
 local
+   type int = Int.t
+
    fun ++ (r: int ref): int =
       let
          val n = 1 + !r

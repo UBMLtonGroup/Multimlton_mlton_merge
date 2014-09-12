@@ -1,15 +1,16 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 2004-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2004-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
  * See the file MLton-LICENSE for details.
  *)
 
-functor DeepFlatten (S: SSA2_TRANSFORM_STRUCTS): SSA2_TRANSFORM = 
+functor DeepFlatten (S: DEEP_FLATTEN_STRUCTS): DEEP_FLATTEN = 
 struct
 
 open S
+
+type int = Int.t
 
 datatype z = datatype Exp.t
 datatype z = datatype Statement.t
@@ -551,7 +552,7 @@ structure Object =
          Vector.sub (finalOffsets object, offset)
    end
 
-fun transform2 (program as Program.T {datatypes, functions, globals, main}) =
+fun flatten (program as Program.T {datatypes, functions, globals, main}) =
    let
       val {get = conValue: Con.t -> Value.t option ref, ...} =
          Property.get (Con.plist, Property.initFun (fn _ => ref NONE))

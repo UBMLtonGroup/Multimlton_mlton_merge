@@ -1,5 +1,4 @@
-/* Copyright (C) 2012 Matthew Fluet.
- * Copyright (C) 1999-2005, 2007-2008 Henry Cejtin, Matthew Fluet,
+/* Copyright (C) 1999-2005, 2007-2008 Henry Cejtin, Matthew Fluet,
  *    Suresh Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -29,9 +28,8 @@ static inline GC_intInf toBignum (GC_state s, objptr arg) {
   GC_intInf bp;
 
   assert (not isSmall(arg));
-  bp = (GC_intInf)(objptrToPointer(arg, s->heap.start)
-                   - (offsetof(struct GC_intInf, obj)
-                      + offsetof(struct GC_intInf_obj, isneg)));
+  bp = (GC_intInf)(objptrToPointer(arg, s->heap->start)
+                   - offsetof(struct GC_intInf, obj.body.isneg));
   if (DEBUG_INT_INF)
     fprintf (stderr, "bp->header = "FMTHDR"\n", bp->header);
   assert (bp->header == GC_INTINF_HEADER);
@@ -77,13 +75,13 @@ void fillIntInfArg (GC_state s, objptr arg, __mpz_struct *res,
     }
   } else {
     bp = toBignum (s, arg);
-    /* The _mp_alloc field is declared as int.  
+    /* The _mp_alloc field is declared as int.
      * No possibility of an overflowing assignment, as all *huge*
      * intInfs must have come from some previous GnuMP evaluation.
      */
     res->_mp_alloc = (int)(bp->length - 1);
-    res->_mp_d = (mp_limb_t*)(bp->obj.limbs);
-    res->_mp_size = bp->obj.isneg ? - res->_mp_alloc : res->_mp_alloc;
+    res->_mp_d = (mp_limb_t*)(bp->obj.body.limbs);
+    res->_mp_size = bp->obj.body.isneg ? - res->_mp_alloc : res->_mp_alloc;
   }
   assert ((res->_mp_size == 0)
           or (res->_mp_d[(res->_mp_size < 0
@@ -98,22 +96,22 @@ void fillIntInfArg (GC_state s, objptr arg, __mpz_struct *res,
  * Initialize an __mpz_struct to use the space provided by the heap.
  */
 void initIntInfRes (GC_state s, __mpz_struct *res,
-                    ARG_USED_FOR_ASSERT size_t bytes) {
+                    __attribute__ ((unused)) size_t bytes) {
   GC_intInf bp;
   size_t nlimbs;
 
   assert (bytes <= (size_t)(s->limitPlusSlop - s->frontier));
   bp = (GC_intInf)s->frontier;
   /* We have as much space for the limbs as there is to the end of the
-   * heap.  Divide by (sizeof(mp_limb_t)) to get number of limbs.
+   * heap->  Divide by (sizeof(mp_limb_t)) to get number of limbs.
    */
-  nlimbs = ((size_t)(s->limitPlusSlop - (pointer)bp->obj.limbs)) / (sizeof(mp_limb_t));
-  /* The _mp_alloc field is declared as int. 
+  nlimbs = ((size_t)(s->limitPlusSlop - (pointer)bp->obj.body.limbs)) / (sizeof(mp_limb_t));
+  /* The _mp_alloc field is declared as int.
    * Avoid an overflowing assignment, which could happen with huge
    * heaps.
    */
   res->_mp_alloc = (int)(min(nlimbs,(size_t)INT_MAX));
-  res->_mp_d = (mp_limb_t*)(bp->obj.limbs);
+  res->_mp_d = (mp_limb_t*)(bp->obj.body.limbs);
   res->_mp_size = 0; /* is this necessary? */
 }
 
@@ -139,16 +137,14 @@ objptr finiIntInfRes (GC_state s, __mpz_struct *res, size_t bytes) {
   if (DEBUG_INT_INF_DETAILED)
     fprintf (stderr, "res --> %s\n",
              mpz_get_str (NULL, 10, res));
-  bp = (GC_intInf)((pointer)res->_mp_d
-                   - (offsetof(struct GC_intInf, obj)
-                      + offsetof(struct GC_intInf_obj, limbs)));
-  assert (res->_mp_d == (mp_limb_t*)(bp->obj.limbs));
+  bp = (GC_intInf)((pointer)res->_mp_d - offsetof(struct GC_intInf, obj.body.limbs));
+  assert (res->_mp_d == (mp_limb_t*)(bp->obj.body.limbs));
   size = res->_mp_size;
   if (size < 0) {
-    bp->obj.isneg = TRUE;
+    bp->obj.body.isneg = TRUE;
     size = - size;
   } else
-    bp->obj.isneg = FALSE;
+    bp->obj.body.isneg = FALSE;
   assert (size >= 0);
   if (size <= 1) {
     uintmax_t val, ans;
@@ -156,8 +152,8 @@ objptr finiIntInfRes (GC_state s, __mpz_struct *res, size_t bytes) {
     if (size == 0)
       val = 0;
     else
-      val = bp->obj.limbs[0];
-    if (bp->obj.isneg) {
+      val = bp->obj.body.limbs[0];
+    if (bp->obj.body.isneg) {
       /*
        * We only fit if val in [1, 2^(CHAR_BIT * OBJPTR_SIZE - 2)].
        */
@@ -172,11 +168,11 @@ objptr finiIntInfRes (GC_state s, __mpz_struct *res, size_t bytes) {
       return (objptr)(ans<<1 | 1);
     }
   }
-  setFrontier (s, (pointer)(&bp->obj.limbs[size]), bytes);
+  setFrontier (s, (pointer)(&bp->obj.body.limbs[size]), bytes);
   bp->counter = (GC_arrayCounter)0;
   bp->length = (GC_arrayLength)(size + 1); /* +1 for isneg field */
   bp->header = GC_INTINF_HEADER;
-  return pointerToObjptr ((pointer)&bp->obj, s->heap.start);
+  return pointerToObjptr ((pointer)&bp->obj, s->heap->start);
 }
 
 static inline objptr binary (objptr lhs, objptr rhs, size_t bytes,
@@ -186,11 +182,12 @@ static inline objptr binary (objptr lhs, objptr rhs, size_t bytes,
   __mpz_struct lhsmpz, rhsmpz, resmpz;
   mp_limb_t lhsspace[LIMBS_PER_OBJPTR + 1], rhsspace[LIMBS_PER_OBJPTR + 1];
 
-  initIntInfRes (&gcState, &resmpz, bytes);
-  fillIntInfArg (&gcState, lhs, &lhsmpz, lhsspace);
-  fillIntInfArg (&gcState, rhs, &rhsmpz, rhsspace);
+  GC_state s = pthread_getspecific (gcstate_key);
+  initIntInfRes (s, &resmpz, bytes);
+  fillIntInfArg (s, lhs, &lhsmpz, lhsspace);
+  fillIntInfArg (s, rhs, &rhsmpz, rhsspace);
   binop (&resmpz, &lhsmpz, &rhsmpz);
-  return finiIntInfRes (&gcState, &resmpz, bytes);
+  return finiIntInfRes (s, &resmpz, bytes);
 }
 
 objptr IntInf_add (objptr lhs, objptr rhs, size_t bytes) {
@@ -261,11 +258,12 @@ static objptr unary (objptr arg, size_t bytes,
                                  const __mpz_struct *argspace)) {
   __mpz_struct argmpz, resmpz;
  mp_limb_t argspace[LIMBS_PER_OBJPTR + 1];
+ GC_state s = pthread_getspecific (gcstate_key);
 
- initIntInfRes (&gcState, &resmpz, bytes);
- fillIntInfArg (&gcState, arg, &argmpz, argspace);
+ initIntInfRes (s, &resmpz, bytes);
+ fillIntInfArg (s, arg, &argmpz, argspace);
  unop (&resmpz, &argmpz);
- return finiIntInfRes (&gcState, &resmpz, bytes);
+ return finiIntInfRes (s, &resmpz, bytes);
 }
 
 objptr IntInf_neg (objptr arg, size_t bytes) {
@@ -289,11 +287,12 @@ static objptr shary (objptr arg, Word32_t shift, size_t bytes,
 {
   __mpz_struct argmpz, resmpz;
   mp_limb_t argspace[LIMBS_PER_OBJPTR + 1];
+  GC_state s = pthread_getspecific (gcstate_key);
 
-  initIntInfRes (&gcState, &resmpz, bytes);
-  fillIntInfArg (&gcState, arg, &argmpz, argspace);
+  initIntInfRes (s, &resmpz, bytes);
+  fillIntInfArg (s, arg, &argmpz, argspace);
   shop (&resmpz, &argmpz, (unsigned long)shift);
-  return finiIntInfRes (&gcState, &resmpz, bytes);
+  return finiIntInfRes (s, &resmpz, bytes);
 }
 
 objptr IntInf_arshift (objptr arg, Word32_t shift, size_t bytes) {
@@ -318,12 +317,13 @@ Int32_t IntInf_compare (objptr lhs, objptr rhs) {
   __mpz_struct lhsmpz, rhsmpz;
   mp_limb_t lhsspace[LIMBS_PER_OBJPTR + 1], rhsspace[LIMBS_PER_OBJPTR + 1];
   int res;
+  GC_state s = pthread_getspecific (gcstate_key);
 
   if (DEBUG_INT_INF)
     fprintf (stderr, "IntInf_compare ("FMTOBJPTR", "FMTOBJPTR")\n",
              lhs, rhs);
-  fillIntInfArg (&gcState, lhs, &lhsmpz, lhsspace);
-  fillIntInfArg (&gcState, rhs, &rhsmpz, rhsspace);
+  fillIntInfArg (s, lhs, &lhsmpz, lhsspace);
+  fillIntInfArg (s, rhs, &rhsmpz, rhsspace);
   res = mpz_cmp (&lhsmpz, &rhsmpz);
   if (res < 0) return -1;
   if (res > 0) return 1;
@@ -353,29 +353,30 @@ objptr IntInf_toString (objptr arg, int32_t base, size_t bytes) {
   mp_limb_t argspace[LIMBS_PER_OBJPTR + 1];
   char *str;
   size_t size;
+  GC_state s = pthread_getspecific (gcstate_key);
 
   if (DEBUG_INT_INF)
     fprintf (stderr, "IntInf_toString ("FMTOBJPTR", %"PRId32", %"PRIuMAX")\n",
              arg, base, (uintmax_t)bytes);
   assert (base == 2 || base == 8 || base == 10 || base == 16);
-  fillIntInfArg (&gcState, arg, &argmpz, argspace);
-  sp = (GC_string8)gcState.frontier;
+  fillIntInfArg (s, arg, &argmpz, argspace);
+  sp = (GC_string8)s->frontier;
   str = mpz_get_str((void*)&sp->obj, base, &argmpz);
   assert (str == (char*)&sp->obj);
   size = strlen(str);
-  if (sp->obj.chars[0] == '-')
-    sp->obj.chars[0] = '~';
+  if (sp->obj.body.chars[0] == '-')
+    sp->obj.body.chars[0] = '~';
   if (base > 0)
     for (unsigned int i = 0; i < size; i++) {
-      char c = sp->obj.chars[i];
+      char c = sp->obj.body.chars[i];
       if (('a' <= c) && (c <= 'z'))
-        sp->obj.chars[i] = (char)(c + ('A' - 'a'));
+        sp->obj.body.chars[i] = (char)(c + ('A' - 'a'));
     }
-  setFrontier (&gcState, (pointer)&sp->obj + size, bytes);
+  setFrontier (s, (pointer)&sp->obj + size, bytes);
   sp->counter = 0;
   sp->length = size;
   sp->header = GC_STRING8_HEADER;
-  return pointerToObjptr ((pointer)&sp->obj, gcState.heap.start);
+  return pointerToObjptr ((pointer)&sp->obj, s->heap->start);
 }
 
 /*
@@ -383,7 +384,7 @@ static GC_state intInfMemoryFuncsState;
 
 static void * wrap_alloc_func(size_t size) {
   if (DEBUG_INT_INF)
-    fprintf (stderr, "alloc_func (size = %"PRIuMAX") = ", 
+    fprintf (stderr, "alloc_func (size = %"PRIuMAX") = ",
              (uintmax_t)size);
   void * res = (*alloc_func_ptr)(size);
   if (DEBUG_INT_INF)
@@ -394,7 +395,7 @@ static void * wrap_alloc_func(size_t size) {
 static void * wrap_realloc_func(void *ptr, size_t old_size, size_t new_size) {
   if (DEBUG_INT_INF)
     fprintf (stderr, "realloc_func (ptr = "FMTPTR", "
-             "old_size = %"PRIuMAX", new_size = %"PRIuMAX") = ", 
+             "old_size = %"PRIuMAX", new_size = %"PRIuMAX") = ",
              (uintptr_t)ptr, (uintmax_t)old_size, (uintmax_t)new_size);
   assert (! isPointerInHeap(intInfMemoryFuncsState, (pointer)ptr));
   void * res = (*realloc_func_ptr)(ptr, old_size, new_size);
@@ -405,7 +406,7 @@ static void * wrap_realloc_func(void *ptr, size_t old_size, size_t new_size) {
 
 static void wrap_free_func(void *ptr, size_t size) {
   if (DEBUG_INT_INF)
-    fprintf (stderr, "free_func (ptr = "FMTPTR", size = %"PRIuMAX")", 
+    fprintf (stderr, "free_func (ptr = "FMTPTR", size = %"PRIuMAX")",
              (uintptr_t)ptr, (uintmax_t)size);
   assert (! isPointerInHeap(intInfMemoryFuncsState, (pointer)ptr));
   (*free_func_ptr)(ptr, size);

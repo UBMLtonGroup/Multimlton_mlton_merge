@@ -35,7 +35,6 @@ structure SMLofNJ: SML_OF_NJ =
                    | Cygwin => UNIX
                    | Darwin => MACOS
                    | FreeBSD => UNIX
-                   | Hurd => UNIX
                    | HPUX => UNIX
                    | Linux => UNIX
                    | MinGW => WIN32

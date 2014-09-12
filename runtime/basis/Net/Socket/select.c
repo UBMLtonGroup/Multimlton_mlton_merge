@@ -1,21 +1,21 @@
 #include "platform.h"
 
-static struct timeval Socket_timeout;
-static struct timeval *Socket_timeoutPtr;
+static struct timeval timeout;
+static struct timeval *timeoutPtr;
 
 void Socket_setTimeout (C_Time_t sec, C_SUSeconds_t usec) {
-  Socket_timeout.tv_sec = sec;
-  Socket_timeout.tv_usec = usec;
-  Socket_timeoutPtr = &Socket_timeout;
+  timeout.tv_sec = sec;
+  timeout.tv_usec = usec;
+  timeoutPtr = &timeout;
 }
 C_Time_t Socket_getTimeout_sec (void) {
-  return Socket_timeout.tv_sec;
+  return timeout.tv_sec;
 }
 C_SUSeconds_t Socket_getTimeout_usec (void) {
-  return Socket_timeout.tv_usec;
+  return timeout.tv_usec;
 }
 void Socket_setTimeoutNull (void) {
-  Socket_timeoutPtr = NULL;
+  timeoutPtr = NULL;
 }
 
 C_Errno_t(C_Int_t) Socket_select (Vector(C_Fd_t) read_vec,
@@ -62,12 +62,9 @@ C_Errno_t(C_Int_t) Socket_select (Vector(C_Fd_t) read_vec,
   } else {
     except_fds = NULL;
   }
-  MLton_initSockets ();
-  res = select(FD_SETSIZE, read_fds, write_fds, except_fds, Socket_timeoutPtr);
-  if (res == -1) {
-    MLton_fixSocketErrno();
+  res = select(FD_SETSIZE, read_fds, write_fds, except_fds, timeoutPtr);
+  if (res == -1)
     return res;
-  }
   if (read_len > 0) {
     for (unsigned int i = 0; i < read_len; i++) {
       int fd = ((int *)read_vec)[i];

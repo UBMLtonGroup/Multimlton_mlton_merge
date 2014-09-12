@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 2005-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 2005-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -10,6 +9,8 @@ functor PrePasses (S: PREPASSES_STRUCTS): PREPASSES =
 struct
 
 open S
+
+type int = Int.t
 
 open Exp Transfer
 

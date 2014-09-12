@@ -380,18 +380,6 @@ signature BASIS_EXTRA =
       sharing Unsafe.Word32Vector = Word32Vector
       sharing Unsafe.Word64Array = Word64Array
       sharing Unsafe.Word64Vector = Word64Vector
-      sharing Unsafe.PackReal32Big = PackReal32Big
-      sharing Unsafe.PackReal32Little = PackReal32Little
-      sharing Unsafe.PackReal64Big = PackReal64Big
-      sharing Unsafe.PackReal64Little = PackReal64Little
-      sharing Unsafe.PackRealBig = PackRealBig
-      sharing Unsafe.PackRealLittle = PackRealLittle
-      sharing Unsafe.PackWord16Big = PackWord16Big
-      sharing Unsafe.PackWord16Little = PackWord16Little
-      sharing Unsafe.PackWord32Big = PackWord32Big
-      sharing Unsafe.PackWord32Little = PackWord32Little
-      sharing Unsafe.PackWord64Big = PackWord64Big
-      sharing Unsafe.PackWord64Little = PackWord64Little
 
       (* ************************************************** *)
       (* ************************************************** *)
@@ -717,16 +705,10 @@ signature BASIS_EXTRA =
       sharing type Word64Array2.vector = Word64Vector.vector
       sharing type MLton.BinIO.instream = BinIO.instream
       sharing type MLton.BinIO.outstream = BinIO.outstream
-      sharing type MLton.CharArray.t = CharArray.array
-      sharing type MLton.CharArray.elem = CharArray.elem
-      sharing type MLton.CharVector.t = CharVector.vector
-      sharing type MLton.CharVector.elem = CharVector.elem
       sharing type MLton.TextIO.instream = TextIO.instream
       sharing type MLton.TextIO.outstream = TextIO.outstream
       sharing type MLton.Word8Array.t = Word8Array.array
-      sharing type MLton.Word8Array.elem = Word8Array.elem
       sharing type MLton.Word8Vector.t = Word8Vector.vector
-      sharing type MLton.Word8Vector.elem = Word8Vector.elem
    end
    (* bool is already defined as bool and so cannot be shared.
     * So, we where these to get the needed sharing.
@@ -776,7 +758,6 @@ signature BASIS_EXTRA =
    where type OS.Process.status = OS.Process.status (* UNIX, POSIX_PROCESS *)
    where type Position.int = Position.int
    where type Posix.IO.file_desc = Posix.IO.file_desc
-   where type Posix.Process.exit_status = Posix.Process.exit_status
    where type Posix.Signal.signal = Posix.Signal.signal
    where type Socket.dgram = Socket.dgram
    where type ('a, 'b) Socket.sock = ('a, 'b) Socket.sock
@@ -809,7 +790,6 @@ signature BASIS_EXTRA =
    where type Word8ArraySlice.vector_slice = Word8ArraySlice.vector_slice
    where type Word8Vector.vector = Word8Vector.vector
    
-   where type MLton.Pointer.t = MLton.Pointer.t
    where type 'a MLton.Thread.t = 'a MLton.Thread.t
    where type MLton.Thread.Runnable.t = MLton.Thread.Runnable.t
 

@@ -19,7 +19,7 @@
  * they are global in order to avoid infinite loops.
  *)
 
-functor ConstantPropagation (S: SSA_TRANSFORM_STRUCTS) : SSA_TRANSFORM = 
+functor ConstantPropagation (S: CONSTANT_PROPAGATION_STRUCTS) : CONSTANT_PROPAGATION = 
 struct
 
 open S
@@ -628,7 +628,7 @@ val traceMakeDataUnknown =
 (*                     simplify                      *)
 (* ------------------------------------------------- *)
 
-fun transform (program: Program.t): Program.t =
+fun simplify (program: Program.t): Program.t =
    let
       val program as Program.T {datatypes, globals, functions, main} =
          eliminateDeadBlocks program

@@ -1,5 +1,4 @@
-(* Copyright (C) 2013 Henry Cejtin, Matthew Fluet, Suresh
- * Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -25,10 +24,21 @@ signature PRIM_INT_INF =
          Big of C_MPLimb.word vector
        | Small of ObjptrInt.int
       val rep: int -> rep
-      val fromRep: rep -> int option
 
-      val isSmall: int -> bool
-      val areSmall: int * int -> bool
+      structure Prim : 
+         sig
+            val isSmall: int -> bool
+            val areSmall: int * int -> bool
+            val dropTag: ObjptrWord.word -> ObjptrWord.word
+            val dropTagCoerce: int -> ObjptrWord.word
+            val dropTagCoerceInt: int -> ObjptrInt.int
+            val addTag: ObjptrWord.word -> ObjptrWord.word
+            val addTagCoerce: ObjptrWord.word -> int
+            val addTagCoerceInt: ObjptrInt.int -> int
+            val zeroTag: ObjptrWord.word -> ObjptrWord.word
+            val oneTag: ObjptrWord.word -> ObjptrWord.word
+            val oneTagCoerce: ObjptrWord.word -> int
+         end
 
       val abs: int -> int
       val +! : int * int -> int
@@ -62,6 +72,7 @@ signature PRIM_INT_INF =
       val leu: int * int -> bool
       val gtu: int * int -> bool
       val geu: int * int -> bool
+      val isNeg: int -> bool
 
       val andb: int * int -> int
       val <<? : int * Primitive.Word32.word -> int
@@ -412,24 +423,6 @@ structure IntInf =
          if isSmall i
             then Small (dropTagCoerceInt i)
             else Big (Prim.toVector i)
-      
-      fun fromRep r =
-         case r of
-            Big v => 
-               let
-                  val ok =
-                     SeqIndex.> (Vector.length v, 1) andalso
-                     MPLimb.<= (V.subUnsafe (v, 0), 0w1)
-               in
-                  if ok then SOME (Prim.fromVector v) else NONE
-               end
-          | Small i => 
-                let
-                   val out = addTagCoerceInt i
-                   val undo = dropTagCoerceInt out
-                in
-                   if i = undo then SOME out else NONE
-                end
 
       local
          fun 'a make {zextdToMPLimb: 'a -> MPLimb.word,
@@ -620,7 +613,7 @@ structure IntInf =
                     in
                        if Int32.>= (MPLimb.sizeInBits, #sizeInBits other) 
                           then let
-                                  val limbsPer : S.t = 1
+                                  val limbsPer = 1
                                   val limb = V.subUnsafe (v, 1)
                                   val extra =
                                      S.> (n, S.+ (limbsPer, 1))
@@ -1041,7 +1034,7 @@ structure IntInf =
              | (_, 0) => a * acc
              | (_, 1) => acc
              | (1, _) => acc
-             | (_ : I.t * I.t) =>
+             | _ => 
                   if a = b
                      then a * acc
                      else
@@ -1210,7 +1203,7 @@ structure IntInf =
             if shift = 0wx0
                then arg
                else Prim.~>> (arg, shift,
-                              reserve (S.max (0, S.- (numLimbs arg, shiftSize shift)), 1))
+                              reserve (S.max (1, S.- (numLimbs arg, shiftSize shift)), 0))
       end
 
       fun mkBigCvt {base: Int32.int,
@@ -1263,6 +1256,21 @@ structure IntInf =
       val maxInt = NONE
       val minInt = NONE
 
+      structure Prim = 
+         struct
+            val isSmall = isSmall
+            val areSmall = areSmall
+            val dropTag = dropTag
+            val dropTagCoerce = dropTagCoerce
+            val dropTagCoerceInt = dropTagCoerceInt
+            val addTag = addTag
+            val addTagCoerce = addTagCoerce
+            val addTagCoerceInt = addTagCoerceInt
+            val zeroTag = zeroTag
+            val oneTag = oneTag
+            val oneTagCoerce = oneTagCoerce
+        end
+
       val abs = bigAbs
       val op +! = bigAdd
       val op +? = bigAdd
@@ -1295,6 +1303,7 @@ structure IntInf =
       val leu = bigLEU
       val gtu = bigGTU
       val geu = bigGEU
+      val isNeg = bigIsNeg
 
       val andb = bigAndb
       val <<? = bigLshift

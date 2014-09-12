@@ -1,5 +1,4 @@
-(* Copyright (C) 2009,2012 Matthew Fluet.
- * Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,10 +6,12 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor Redundant (S: SSA_TRANSFORM_STRUCTS): SSA_TRANSFORM = 
+functor Redundant (S: REDUNDANT_STRUCTS): REDUNDANT = 
 struct
 
 open S
+
+type int = Int.t
 
 datatype z = datatype Exp.t
 datatype z = datatype Transfer.t
@@ -35,7 +36,9 @@ structure Element:
    end =
    struct
       datatype t = T of {class: class ref}
-      and class = Class of {plist: PropertyList.t}
+      and class = Class of {coarserThan: refinement list ref,
+                            elements: t vector,
+                            plist: PropertyList.t}
       withtype refinement = {coarse: t, fine: t} vector
 
       structure Element =
@@ -50,11 +53,16 @@ structure Element:
             local
                fun make f (Class r) = f r
             in
+               val coarserThan = make #coarserThan
                val plist = make #plist
             end
 
-            fun new () =
-               Class {plist = PropertyList.new ()}
+            fun new elements =
+               Class {coarserThan = ref [],
+                      elements = elements,
+                      plist = PropertyList.new ()}
+
+            val bogus = new (Vector.new0 ())
          end
 
       local
@@ -67,26 +75,57 @@ structure Element:
 
       fun 'a new (elements: 'a vector, plist: 'a -> PropertyList.t): t vector =
          let
-            val {destroy, get = class: 'a -> Class.t, ...} =
+            val classes: t list ref list ref = ref []
+            val {destroy, get = class: 'a -> t list ref, ...} =
                Property.destGet
-               (plist, Property.initFun (fn _ => Class.new ()))
+               (plist, Property.initFun (fn _ =>
+                                         let
+                                            val class = ref []
+                                            val () = List.push (classes, class)
+                                         in
+                                            class
+                                         end))
             val elements =
-               Vector.map (elements, fn elt => T {class = ref (class elt)})
+               Vector.map (elements, fn a =>
+                           let
+                              val elt = T {class = ref Class.bogus}
+                              val () = List.push (class a, elt)
+                           in
+                              elt
+                           end)
             val () = destroy ()
+            val () = List.foreach (!classes, fn r =>
+                                   let
+                                      val elements = Vector.fromList (!r)
+                                      val class = Class.new elements
+                                      val () =
+                                         Vector.foreach
+                                         (elements, fn e => setClass (e, class))
+                                   in
+                                      ()
+                                   end)
          in
             elements
          end
 
       fun new1 () =
          let
-            val elt = T {class = ref (Class.new ())}
+            val e = T {class = ref Class.bogus}
+            val c = Class.new (Vector.new1 e)
+            val () = setClass (e, c)
          in
-            elt
+            e
          end
 
       fun forceDistinct (es: t vector): unit =
          Vector.foreach
-         (es, fn e => setClass (e, Class.new ()))
+         (es, fn e =>
+          let
+             val c = Class.new (Vector.new1 e)
+             val () = setClass (e, c)
+          in
+             ()
+          end)
 
       structure Refinement =
          struct
@@ -115,87 +154,56 @@ structure Element:
                   List.fold (!classes, [], fn (r, ac) =>
                              Vector.fromList (!r) :: ac)
                end
-         end
 
-      fun refine (v: Refinement.t): {change: bool, keep: bool} =
-         let
-            val fineGroups = Refinement.group (v, #fine)
-         in
-            if Vector.length v = List.length fineGroups
-               then {change = false, keep = false}
-            else
-               let
-                  val change = ref false
-                  val numClasses =
-                     List.fold
-                     (fineGroups, 0, fn (v, n) =>
-                      case Refinement.group (v, #coarse) of
-                         [] => n
-                       | [_] => n + 1
-                       | classes =>
-                            let
-                               val () = change := true
-                               val n =
-                                  List.fold
-                                  (classes, n, fn (v, n) =>
-                                   let
-                                      val elements = Vector.map (v, #fine)
-                                      val c = Class.new ()
-                                      val () =
-                                         Vector.foreach
-                                         (elements, fn e => setClass (e, c))
-                                   in
-                                      n + 1
-                                   end)
-                            in
-                               n
-                            end)
-               in
-                  {change = !change,
-                   keep = Vector.length v <> numClasses}
-               end
-         end
-
-      fun fixedPoint rs =
-         let
-            fun loop rs =
-               let
-                  val _ =
-                     Control.diagnostics
-                     (fn display =>
-                      let
-                         open Layout
-                         val () =
-                            display (seq [str "List.length rs = ",
-                                          Int.layout (List.length rs)])
-                      in
-                         ()
-                      end)
-                  val (rs, change) =
-                     List.fold
-                     (rs, ([], false), fn (r, (rs, change)) =>
-                      let
-                         val {keep = keep', change = change'} =
-                            refine r
-                      in
-                         (if keep' then r :: rs else rs,
-                          change orelse change')
-                      end)
-               in
-                  if change
-                     then loop rs
-                  else ()
-               end
-            val () = loop rs
-         in
-            ()
+            fun store (v: t): unit =
+               List.push (Class.coarserThan
+                          (class (#coarse (Vector.sub (v, 0)))),
+                          v)
          end
 
       val todo: Refinement.t list ref = ref []
-      val refine = fn r =>
-         if Vector.length r > 1 then List.push (todo, r) else ()
-      val fixedPoint = fn () =>
-         fixedPoint (!todo)
+
+      fun refine (v: Refinement.t): unit =
+         List.foreach
+         (Refinement.group (v, #fine), fn v =>
+          let
+             val oldClass = class (#fine (Vector.sub (v, 0)))
+             val classes = Refinement.group (v, #coarse)
+          in
+             case classes of
+                [_] => Refinement.store v
+              | _ =>
+                   let
+                      val () =
+                         todo
+                         := (List.fold
+                             (! (Class.coarserThan oldClass), !todo, op ::))
+                   in
+                      List.foreach
+                      (classes, fn v =>
+                       let
+                          val () = Refinement.store v
+                          val elements = Vector.map (v, #fine)
+                          val c = Class.new elements
+                          val () = Vector.foreach (elements, fn e =>
+                                                   setClass (e, c))
+                       in
+                          ()
+                       end)
+                   end
+          end)
+
+      fun fixedPoint () =
+         let
+            fun loop () =
+               case !todo of
+                  [] => ()
+                | r :: rs => (todo := rs
+                              ; refine r
+                              ; loop ())
+         in
+            loop ()
+         end
    end
 
 structure Class = Element.Class
@@ -260,7 +268,7 @@ structure Eqrel:>
       val layout = (List.layout (List.layout Int.layout)) o classes
    end
 
-fun transform (Program.T {datatypes, globals, functions, main}) =
+fun redundant (Program.T {datatypes, globals, functions, main}) =
    let
       val {get = funcInfo: Func.t -> {arg: Eqrel.t, return: Eqrel.t option},
            set = setFuncInfo, ...} =
@@ -288,28 +296,27 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
                in
                   eqrel
                end
-            (* initialize all funcInfo and labelInfo *)
+            (* initialize all varInfo and funcInfo *)
             val () =
                List.foreach
                (functions, fn f =>
                 let
-                   val {name, args, returns, blocks, ...} = Function.dest f
-                   val _ =
-                      setFuncInfo (name, {arg = makeFormalsRel args,
-                                          return = Option.map (returns, Eqrel.fromTypes)})
-                   val _ =
-                      Vector.foreach (blocks, fn Block.T {label, args, ...} =>
-                                      setLabelInfo (label, makeFormalsRel args))
+                   val {name, args, returns, ...} = Function.dest f
                 in
-                   ()
+                   setFuncInfo (name, {arg = makeFormalsRel args,
+                                       return = Option.map (returns,
+                                                            Eqrel.fromTypes)})
                 end)
-            (* Add the calls to all the funcInfos and labelInfos *)
+            (* Add the calls to all the funcInfos *)
             val () =
                List.foreach
                (functions, fn f =>
                 let 
                    val {name, blocks, ...} = Function.dest f
                    val {return, ...} = funcInfo name
+                   val _ =
+                      Vector.foreach (blocks, fn Block.T {label, args, ...} =>
+                                      setLabelInfo (label, makeFormalsRel args))
                 in
                    Vector.foreach
                    (blocks, fn Block.T {transfer, ...} =>
@@ -353,28 +360,27 @@ fun transform (Program.T {datatypes, globals, functions, main}) =
          Control.diagnostics
          (fn display =>
           List.foreach
-          (functions, fn f =>
+          (functions, fn f => 
            let
               open Layout
-              val {name, blocks, ...} = Function.dest f
-              val {arg, return} = funcInfo name
-              val () =
-                 display (seq [Func.layout name,
-                               str " ",
-                               Eqrel.layout arg,
-                               str " : ",
-                               Option.layout Eqrel.layout return])
-              val () =
-                 Vector.foreach
-                 (blocks, fn Block.T {label, ...} =>
-                  let
-                     val arg = labelInfo label
-                  in
-                     display (seq [str "\t",
-                                   Label.layout label,
-                                   str " ",
-                                   Eqrel.layout arg])
-                  end)
+               val {name, blocks, ...} = Function.dest f
+               val {arg, return} = funcInfo name
+               val () =
+                  display (seq [Func.layout name,
+                                str "  ",
+                                Eqrel.layout arg,
+                                Option.layout Eqrel.layout return])
+               val () =
+                  Vector.foreach
+                  (blocks, fn Block.T {label, ...} =>
+                   let
+                      val arg = labelInfo label
+                   in
+                      display (seq [str "\t",
+                                    Label.layout label,
+                                    str " ",
+                                    Eqrel.layout arg])
+                   end)
            in
               ()
            end))

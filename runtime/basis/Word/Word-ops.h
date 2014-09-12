@@ -22,42 +22,58 @@ compare (U##size, name, op)
 #define rol(size)                                                       \
   MLTON_CODEGEN_STATIC_INLINE                                           \
   Word##size Word##size##_rol (Word##size w1, Word32 w2) {              \
-    return (Word##size)(w1 >> (size - w2)) | (Word##size)(w1 << w2);    \
+    return (w1 >> (size - w2)) | (w1 << w2);                            \
   }
 
 #define ror(size)                                                       \
   MLTON_CODEGEN_STATIC_INLINE                                           \
   Word##size Word##size##_ror (Word##size w1, Word32 w2) {              \
-    return (Word##size)(w1 >> w2) | (Word##size)(w1 << (size - w2));    \
+    return (w1 >> w2) | (w1 << (size - w2));                            \
   }                                                                     \
 
 #define shift(kind, name, op)                                           \
   MLTON_CODEGEN_STATIC_INLINE                                           \
   Word##kind Word##kind##_##name (Word##kind w1, Word32 w2) {           \
-    return (Word##kind)(w1 op w2);                                      \
+    return w1 op w2;                                                    \
   }
 
 #define unary(kind, name, op)                                           \
   MLTON_CODEGEN_STATIC_INLINE                                           \
   Word##kind Word##kind##_##name (Word##kind w) {                       \
-    return (Word##kind)(op w);                                          \
+    return op w;                                                        \
   }
 
 #define misaligned(size)                                                \
+  typedef volatile union {                                              \
+    Word##size##_t w;                                                   \
+    Word32_t ws[sizeof(Word##size##_t) / sizeof(Word32_t)];             \
+  } Word##size##OrWord32s;                                              \
   MLTON_CODEGEN_STATIC_INLINE                                           \
   Word##size##_t Word##size##_fetch (Ref(Word##size##_t) wp) {          \
-    Word##size##_t w;                                                   \
-    memcpy(&w, wp, sizeof(Word##size##_t));                             \
-    return w;                                                           \
+    Word##size##OrWord32s u;                                            \
+    Word32_t *wsp;                                                      \
+    wsp = (Word32_t*)wp;                                                \
+    u.ws[0] = wsp[0];                                                   \
+    if ((sizeof(Word##size##_t) / sizeof(Word32_t)) > 1)                \
+      u.ws[1] = wsp[1];                                                 \
+    return u.w;                                                         \
   }                                                                     \
   MLTON_CODEGEN_STATIC_INLINE                                           \
   void Word##size##_store (Ref(Word##size##_t) wp, Word##size##_t w) {  \
-    memcpy(wp, &w, sizeof(Word##size##_t));                             \
+    Word##size##OrWord32s u;                                            \
+    Word32_t *wsp;                                                      \
+    wsp = (Word32_t*)wp;                                                \
+    u.w = w;                                                            \
+    wsp[0] = u.ws[0];                                                   \
+    if ((sizeof(Word##size##_t) / sizeof(Word32_t)) > 1)                \
+      wsp[1] = u.ws[1];                                                 \
     return;                                                             \
   }                                                                     \
   MLTON_CODEGEN_STATIC_INLINE                                           \
   void Word##size##_move (Ref(Word##size##_t) dst, Ref(Word##size##_t) src) { \
-    memcpy(dst, src, sizeof(Word##size##_t));                           \
+    Word##size##_t w;                                                   \
+    w = Word##size##_fetch (src);                                       \
+    Word##size##_store (dst, w);                                        \
     return;                                                             \
   }
 
@@ -76,6 +92,9 @@ unary (size, notb, ~)                           \
 /* WordS<N>_quot and WordS<N>_rem can't be inlined with the C-codegen,  \ 
  * because the gcc optimizer sometimes produces incorrect results       \
  * when one of the arguments is a constant.                             \
+ * WordS<N>_quot and WordS<N>_rem can be inlined with the               \
+ * bytecode-codegen, since they will be used in a context where the     \
+ * arguments are variables.                                             \
  */                                                                     \
 MLTON_CODEGEN_WORDSQUOTREM_IMPL(binary (S##size, quot, /))              \
 MLTON_CODEGEN_WORDSQUOTREM_IMPL(binary (S##size, rem, %))               \

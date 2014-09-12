@@ -1,5 +1,4 @@
-/* Copyright (C) 2012 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+/* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -12,24 +11,26 @@
 /* Layout of strings.  
  * Note, the value passed around is a pointer to the obj member.
  */
-struct GC_string8_obj {
-  char chars[1];
-};
 typedef struct GC_string8 {
   GC_arrayCounter counter;
   GC_arrayLength length;
   GC_header header;
-  struct GC_string8_obj obj;
+  union {
+    struct {
+      char chars[1];
+    } body;
+    pointerAux _p; /* alignment */
+  } obj;
 } __attribute__ ((packed)) *GC_string8;
 
 COMPILE_TIME_ASSERT(GC_string8__obj_packed,
-                    offsetof(struct GC_string8, obj) ==
-                    sizeof(GC_arrayCounter)
-                    + sizeof(GC_arrayLength)
+                    offsetof(struct GC_string8, obj) == 
+                    sizeof(GC_arrayCounter) 
+                    + sizeof(GC_arrayLength) 
                     + sizeof(GC_header));
-COMPILE_TIME_ASSERT(GC_string8_obj__chars_packed,
-                    offsetof(struct GC_string8_obj, chars) ==
-                    0);
+COMPILE_TIME_ASSERT(GC_string8__obj_body_chars_packed,
+                    offsetof(struct GC_string8, obj.body.chars) == 
+                    offsetof(struct GC_string8, obj));
 
 #endif /* (defined (MLTON_GC_INTERNAL_TYPES)) */
 

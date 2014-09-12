@@ -1,5 +1,4 @@
-(* Copyright (C) 2010-2011,2013-2014 Matthew Fluet.
- * Copyright (C) 1999-2009 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2009 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -16,19 +15,21 @@ structure Compile = Compile ()
 
 structure Place =
    struct
-      datatype t = Files | Generated | MLB | O | OUT | SML | TypeCheck
+      datatype t = CM | Files | Generated | MLB | O | OUT | SML | TypeCheck
 
       val toInt: t -> int =
          fn MLB => 1
-          | SML => 1
+          | CM => 1
           | Files => 2
+          | SML => 3
           | TypeCheck => 4
           | Generated => 5
           | O => 6
           | OUT => 7
 
       val toString =
-         fn Files => "files"
+         fn CM => "cm"
+          | Files => "files"
           | SML => "sml"
           | MLB => "mlb"
           | Generated => "g"
@@ -56,12 +57,6 @@ val arScript: string ref = ref "<unset>"
 val asOpts: {opt: string, pred: OptPred.t} list ref = ref []
 val ccOpts: {opt: string, pred: OptPred.t} list ref = ref []
 val linkOpts: {opt: string, pred: OptPred.t} list ref = ref []
-val llvm_as: string ref = ref "llvm-as"
-val llvm_asOpts: {opt: string, pred: OptPred.t} list ref = ref []
-val llvm_llc: string ref = ref "llc"
-val llvm_llcOpts: {opt: string, pred: OptPred.t} list ref = ref []
-val llvm_opt: string ref = ref "opt"
-val llvm_optOpts: {opt: string, pred: OptPred.t} list ref = ref []
 
 val buildConstants: bool ref = ref false
 val debugRuntime: bool ref = ref false
@@ -70,10 +65,11 @@ val debugFormat: debugFormat option ref = ref NONE
 val expert: bool ref = ref false
 val explicitAlign: Control.align option ref = ref NONE
 val explicitChunk: Control.chunk option ref = ref NONE
-datatype explicitCodegen = Native | Explicit of Control.Codegen.t
+datatype explicitCodegen = Native | Explicit of Control.codegen
 val explicitCodegen: explicitCodegen option ref = ref NONE
 val keepGenerated = ref false
 val keepO = ref false
+val keepSML = ref false
 val output: string option ref = ref NONE
 val profileSet: bool ref = ref false
 val profileTimeSet: bool ref = ref false
@@ -105,41 +101,25 @@ val targetMap: unit -> {arch: MLton.Platform.Arch.t,
                         target: string} list =
    Promise.lazy
    (fn () =>
-    let
-       val targetsDir =
-          OS.Path.mkAbsolute { path = "targets",
-                               relativeTo = !Control.libDir }
-       val potentialTargets = Dir.lsDirs targetsDir
-       fun targetMap target =
-          let
-             val targetDir =
-                OS.Path.mkAbsolute { path = target,
-                                     relativeTo = targetsDir }
-             val osFile =
-                OS.Path.joinDirFile { dir = targetDir,
-                                      file = "os" }
-             val archFile =
-                OS.Path.joinDirFile { dir = targetDir,
-                                      file = "arch" }
-             val os   = File.contents osFile
-             val arch = File.contents archFile
-             val os   = List.first (String.tokens (os,   Char.isSpace))
-             val arch = List.first (String.tokens (arch, Char.isSpace))
-             val os =
-                case MLton.Platform.OS.fromString os of
-                   NONE => Error.bug (concat ["strange os: ", os])
-                 | SOME os => os
-             val arch =
-                case MLton.Platform.Arch.fromString arch of
-                   NONE => Error.bug (concat ["strange arch: ", arch])
-                 | SOME a => a
-          in
-             SOME { arch = arch, os = os, target = target }
-          end
-          handle _ => NONE
-    in
-       List.keepAllMap (potentialTargets, targetMap)
-    end)
+    List.map
+    (File.lines (OS.Path.joinDirFile {dir = !Control.libDir,
+                                      file = "target-map"}),
+     fn line =>
+     case String.tokens (line, Char.isSpace) of
+        [target, arch, os] =>
+           let
+              val arch =
+                 case MLton.Platform.Arch.fromString arch of
+                    NONE => Error.bug (concat ["strange arch: ", arch])
+                  | SOME a => a
+              val os =
+                 case MLton.Platform.OS.fromString os of
+                    NONE => Error.bug (concat ["strange os: ", os])
+                  | SOME os => os
+           in
+              {arch = arch, os = os, target = target}
+           end
+      | _ => Error.bug (concat ["strange target mapping: ", line])))
 
 fun setTargetType (target: string, usage): unit =
    case List.peek (targetMap (), fn {target = t, ...} => target = t) of
@@ -152,6 +132,9 @@ fun setTargetType (target: string, usage): unit =
             ; Target.os := os
          end
 
+(* XXX KC : Have you made all the changes in this file
+ * UPDATE KC - NO!! codegen supports have to be updated
+ * does not support x86Codegen *)
 fun hasCodegen (cg) =
    let
       datatype z = datatype Control.Target.arch
@@ -160,28 +143,19 @@ fun hasCodegen (cg) =
       datatype z = datatype Control.codegen
    in
       case !Control.Target.arch of
-         AMD64 => (case cg of
-                      X86Codegen => false
+        AMD64 => (case cg of
+                      x86Codegen => false
                     | _ => true)
-       | X86 => (case cg of
-                    AMD64Codegen => false
-                  | X86Codegen =>
-                      (* Darwin PIC doesn't work *)
-                      !Control.Target.os <> Darwin orelse
-                      !Control.format = Executable orelse
-                      !Control.format = Archive
-                  | _ => true)
-       | _ => (case cg of
-                  AMD64Codegen => false
-                | X86Codegen => false
-                | _ => true)
+
+      | _ => (case cg of
+                CCodegen => true
+              | _ => false)
    end
 fun hasNativeCodegen () =
    let
       datatype z = datatype Control.codegen
    in
-      hasCodegen AMD64Codegen
-      orelse hasCodegen X86Codegen
+      hasCodegen amd64Codegen
    end
 
 
@@ -190,14 +164,9 @@ fun defaultAlignIs8 () =
       datatype z = datatype Control.Target.arch
    in
       case !Control.Target.arch of
-         Alpha => true
-       | AMD64 => true
-       | ARM => true
-       | HPPA => true
+         HPPA => true
        | IA64 => true
-       | MIPS => true
        | Sparc => true
-       | S390 => true
        | _ => false
    end
 
@@ -209,13 +178,10 @@ fun makeOptions {usage} =
             Control.Elaborate.Bad =>
                usage (concat ["invalid -", flag, " flag: ", s])
           | Control.Elaborate.Deprecated ids =>
-               if !Control.warnDeprecated
-                  then
-                     Out.output
-                     (Out.error,
-                      concat ["Warning: ", "deprecated annotation: ", s, ", use ",
-                              List.toString Control.Elaborate.Id.name ids, ".\n"])
-               else ()
+               Out.output
+               (Out.error,
+                concat ["Warning: ", "deprecated annotation: ", s, ".  Use ",
+                        List.toString Control.Elaborate.Id.name ids, ".\n"])
           | Control.Elaborate.Good () => ()
           | Control.Elaborate.Other =>
                usage (concat ["invalid -", flag, " flag: ", s])
@@ -370,7 +336,9 @@ fun makeOptions {usage} =
         (fn s =>
          (case Regexp.fromString s of
              SOME (re,_) => let val re = Regexp.compileDFA re
-                            in List.push (diagPasses, re)
+                            in
+                               List.push (diagPasses, re)
+                               ; List.push (keepPasses, re)
                             end
            | NONE => usage (concat ["invalid -diag-pass flag: ", s])))),
        let
@@ -497,7 +465,7 @@ fun makeOptions {usage} =
              case !inlineNonRec of
                 {product, ...} =>
                    inlineNonRec := {small = small, product = product})),
-       (Normal, "keep", " {g|o}", "save intermediate files",
+       (Normal, "keep", " {g|o|sml}", "save intermediate files",
         SpaceString (fn s =>
                      case s of
                         "core-ml" => keepCoreML := true
@@ -506,6 +474,7 @@ fun makeOptions {usage} =
                       | "machine" => keepMachine := true
                       | "o" => keepO := true
                       | "rssa" => keepRSSA := true
+                      | "sml" => keepSML := true
                       | "ssa" => keepSSA := true
                       | "ssa2" => keepSSA2 := true
                       | "sxml" => keepSXML := true
@@ -526,30 +495,6 @@ fun makeOptions {usage} =
        (Expert, "link-opt-quote", " <opt>", "pass (quoted) option to linker",
         SpaceString
         (fn s => List.push (linkOpts, {opt = s, pred = OptPred.Yes}))),
-       (Expert, "llvm-as", " <llvm-as>", "path to llvm .ll -> .bc assembler",
-        SpaceString (fn s => llvm_as := s)),
-       (Normal, "llvm-as-opt", " <opt>", "pass option to llvm assembler",
-        (SpaceString o tokenizeOpt)
-        (fn s => List.push (llvm_asOpts, {opt = s, pred = OptPred.Yes}))),
-       (Expert, "llvm-as-opt-quote", " <opt>", "pass (quoted) option to llvm assembler",
-        SpaceString
-        (fn s => List.push (llvm_asOpts, {opt = s, pred = OptPred.Yes}))),
-       (Expert, "llvm-llc", " <llc>", "path to llvm .bc -> .o compiler",
-        SpaceString (fn s => llvm_llc := s)),
-       (Normal, "llvm-llc-opt", " <opt>", "pass option to llvm compiler",
-        (SpaceString o tokenizeOpt)
-        (fn s => List.push (llvm_llcOpts, {opt = s, pred = OptPred.Yes}))),
-       (Expert, "llvm-llc-opt-quote", " <opt>", "pass (quoted) option to llvm compiler",
-        SpaceString
-        (fn s => List.push (llvm_llcOpts, {opt = s, pred = OptPred.Yes}))),
-       (Expert, "llvm-opt", " <llvm-as>", "path to llvm .bc -> .bc optimizer",
-        SpaceString (fn s => llvm_opt := s)),
-       (Normal, "llvm-opt-opt", " <opt>", "pass option to llvm optimizer",
-        (SpaceString o tokenizeOpt)
-        (fn s => List.push (llvm_optOpts, {opt = s, pred = OptPred.Yes}))),
-       (Expert, "llvm-opt-opt-quote", " <opt>", "pass (quoted) option to llvm optimizer",
-        SpaceString
-        (fn s => List.push (llvm_optOpts, {opt = s, pred = OptPred.Yes}))),
        (Expert, "loop-passes", " <n>", "loop optimization passes (1)",
         Int
         (fn i =>
@@ -606,6 +551,8 @@ fun makeOptions {usage} =
                      end)),
        (Normal, "output", " <file>", "name of output file",
         SpaceString (fn s => output := SOME s)),
+       (Normal, "parallel-compile", " <n>", "num cores to user for parallel compilation",
+        intRef parallelCompile),
        (Expert, "polyvariance", " {true|false}", "use polyvariance",
         Bool (fn b => if b then () else polyvariance := NONE)),
        (Expert, "polyvariance-hofo", " {true|false}", "duplicate higher-order fns only",
@@ -740,6 +687,13 @@ fun makeOptions {usage} =
                           "anns" => Show.Anns
                         | "path-map" => Show.PathMap
                         | _ => usage (concat ["invalid -show arg: ", s])))),
+       (Expert, "show-anns", " {false|true}", "deprecated (use -show anns)",
+        Bool
+        (fn b =>
+         (if b then show := SOME Show.Anns else ()
+          ; Out.output
+            (Out.error,
+             "Warning: deprecated option: -show-anns.  Use -show anns.\n")))),
        (Normal, "show-basis", " <file>", "write out the final basis environment",
         SpaceString (fn s => showBasis := SOME s)),
        (Normal, "show-def-use", " <file>", "write def-use information",
@@ -766,13 +720,14 @@ fun makeOptions {usage} =
                    Result.Yes () => ()
                  | Result.No s' => usage (concat ["invalid -ssa2-passes arg: ", s']))
           | NONE => Error.bug "ssa2 optimization passes missing")),
-       (Normal, "stop", " {f|g|o|tc}", "when to stop",
+       (Normal, "stop", " {f|g|o|sml|tc}", "when to stop",
         SpaceString
         (fn s =>
          stop := (case s of
                      "f" => Place.Files
                    | "g" => Place.Generated
                    | "o" => Place.O
+                   | "sml" => Place.SML
                    | "tc" => Place.TypeCheck
                    | _ => usage (concat ["invalid -stop arg: ", s])))),
        (Expert, "sxml-passes", " <passes>", "sxml optimization passes",
@@ -821,24 +776,6 @@ fun makeOptions {usage} =
         (SpaceString2
          (fn (target, opt) =>
           List.push (linkOpts, {opt = opt, pred = OptPred.Target target})))),
-       (Expert, "target-llvm-as-opt", " <target> <opt>", "target-dependent llvm assembler option",
-        (SpaceString2 o tokenizeTargetOpt)
-        (fn (target, opt) => List.push (llvm_asOpts, {opt = opt, pred = OptPred.Target target}))),
-       (Expert, "target-llvm-as-opt-quote", " <target> <opt>", "target-dependent llvm assembler option (quoted)",
-        SpaceString2
-        (fn (target, opt) => List.push (llvm_asOpts, {opt = opt, pred = OptPred.Target target}))),
-       (Expert, "target-llvm-llc-opt", " <target> <opt>", "target-dependent llvm compiler option",
-        (SpaceString2 o tokenizeTargetOpt)
-        (fn (target, opt) => List.push (llvm_llcOpts, {opt = opt, pred = OptPred.Target target}))),
-       (Expert, "target-llvm-llc-opt-quote", " <target> <opt>", "target-dependent llvm compiler option (quoted)",
-        SpaceString2
-        (fn (target, opt) => List.push (llvm_llcOpts, {opt = opt, pred = OptPred.Target target}))),
-       (Expert, "target-llvm-opt-opt", " <target> <opt>", "target-dependent llvm optimizer option",
-        (SpaceString2 o tokenizeTargetOpt)
-        (fn (target, opt) => List.push (llvm_optOpts, {opt = opt, pred = OptPred.Target target}))),
-       (Expert, "target-llvm-opt-opt-quote", " <target> <opt>", "target-dependent llvm optimizer option (quoted)",
-        SpaceString2
-        (fn (target, opt) => List.push (llvm_optOpts, {opt = opt, pred = OptPred.Target target}))),
        (Expert, #1 trace, " name1,...", "trace compiler internals", #2 trace),
        (Expert, "type-check", " {false|true}", "type check ILs",
         boolRef typeCheck),
@@ -854,9 +791,6 @@ fun makeOptions {usage} =
        (Expert, "warn-ann", " {true|false}",
         "unrecognized annotation warnings",
         boolRef warnAnn),
-       (Expert, "warn-deprecated", " {true|false}",
-        "deprecated feature warnings",
-        boolRef warnDeprecated),
        (Expert, "xml-passes", " <passes>", "xml optimization passes",
         SpaceString
         (fn s =>
@@ -875,7 +809,7 @@ fun makeOptions {usage} =
    end
 
 val mainUsage =
-   "mlton [option ...] file.{c|mlb|o|sml} [file.{c|o|s|S} ...]"
+   "mlton [option ...] file.{c|cm|mlb|o|sml} [file.{c|o|s|S} ...]"
 
 val {parse, usage} =
    Popt.makeUsage {mainUsage = mainUsage,
@@ -903,13 +837,7 @@ fun commandLine (args: string list): unit =
          case target of
             Cross s => s
           | Self => "self"
-      val targetsDir =
-         OS.Path.mkAbsolute { path = "targets",
-                              relativeTo = !libDir }
-      val targetDir =
-         OS.Path.mkAbsolute { path = targetStr,
-                              relativeTo = targetsDir }
-      val () = libTargetDir := targetDir
+      val _ = libTargetDir := OS.Path.concat (!libDir, targetStr)
       val targetArch = !Target.arch
       val archStr = String.toLower (MLton.Platform.Arch.toString targetArch)
       val targetOS = !Target.os
@@ -945,17 +873,17 @@ fun commandLine (args: string list): unit =
                     | SOME a => a)
       val () =
          codegen := (case !explicitCodegen of
-                        NONE =>
-                           if hasCodegen AMD64Codegen
-                              then AMD64Codegen
-                           else if hasCodegen X86Codegen
-                              then X86Codegen
-                           else CCodegen
+                        NONE => CCodegen
+                           (* if hasCodegen (x86Codegen)
+                              then x86Codegen
+                           else if hasCodegen (amd64Codegen)
+                               then amd64Codegen
+                           else CCodegen *)
                       | SOME Native =>
-                           if hasCodegen AMD64Codegen
-                              then AMD64Codegen
-                           else if hasCodegen X86Codegen
-                              then X86Codegen
+                           if hasCodegen (x86Codegen)
+                              then x86Codegen
+                           else if hasCodegen (amd64Codegen)
+                              then amd64Codegen
                            else usage (concat ["can't use native codegen on ",
                                                MLton.Platform.Arch.toString targetArch,
                                                " target"])
@@ -963,8 +891,8 @@ fun commandLine (args: string list): unit =
       val () = MLton.Rusage.measureGC (!verbosity <> Silent)
       val () = if !profileTimeSet
                   then (case !codegen of
-                           X86Codegen => profile := ProfileTimeLabel
-                         | AMD64Codegen => profile := ProfileTimeLabel
+                           x86Codegen => profile := ProfileTimeLabel
+                         | amd64Codegen => profile := ProfileTimeLabel
                          | _ => profile := ProfileTimeField)
                   else ()
       val () = if !exnHistory
@@ -1052,31 +980,23 @@ fun commandLine (args: string list): unit =
                    :: ccOpts
       val linkOpts =
          List.concat [[concat ["-L", !libTargetDir]],
-                      if !debugRuntime then
-                      ["-lmlton-gdb", "-lgdtoa-gdb"]
-                      else if positionIndependent then
+                      if positionIndependent then
                       ["-lmlton-pic", "-lgdtoa-pic"]
+                      else if !debugRuntime then
+                      ["-lmlton-gdb", "-lgdtoa-gdb"]
                       else
                       ["-lmlton", "-lgdtoa"],
                       addTargetOpts linkOpts]
       val linkArchives =
-         if !debugRuntime then
-         [OS.Path.joinDirFile { dir = !libTargetDir, file = "libmlton-gdb.a" },
-          OS.Path.joinDirFile { dir = !libTargetDir, file = "libgdtoa-gdb.a" }]
-         else if positionIndependent then
+         if positionIndependent then
          [OS.Path.joinDirFile { dir = !libTargetDir, file = "libmlton-pic.a" },
           OS.Path.joinDirFile { dir = !libTargetDir, file = "libgdtoa-pic.a" }]
+         else if !debugRuntime then
+         [OS.Path.joinDirFile { dir = !libTargetDir, file = "libmlton-gdb.a" },
+          OS.Path.joinDirFile { dir = !libTargetDir, file = "libgdtoa-gdb.a" }]
          else
          [OS.Path.joinDirFile { dir = !libTargetDir, file =  "libmlton.a" },
           OS.Path.joinDirFile { dir = !libTargetDir, file =  "libgdtoa.a" }]
-
-      val llvm_as = !llvm_as
-      val llvm_llc = !llvm_llc
-      val llvm_opt = !llvm_opt
-      val llvm_asOpts = addTargetOpts llvm_asOpts
-      val llvm_llcOpts = addTargetOpts llvm_llcOpts
-      val llvm_optOpts = addTargetOpts llvm_optOpts
-
       val _ =
          if not (hasCodegen (!codegen))
             then usage (concat ["can't use ",
@@ -1095,13 +1015,13 @@ fun commandLine (args: string list): unit =
          chunk :=
          (case !explicitChunk of
              NONE => (case !codegen of
-                         AMD64Codegen => ChunkPerFunc
+                         amd64Codegen => ChunkPerFunc
+                       | Bytecode => OneChunk
                        | CCodegen => Coalesce {limit = 4096}
-                       | LLVMCodegen => Coalesce {limit = 4096}
-                       | X86Codegen => ChunkPerFunc
+                       | x86Codegen => ChunkPerFunc
                        )
            | SOME c => c)
-      val _ = if not (!Control.codegen = X86Codegen) andalso !Native.IEEEFP
+      val _ = if not (!Control.codegen = x86Codegen) andalso !Native.IEEEFP
                  then usage "must use x86 codegen with -ieee-fp true"
               else ()
       val _ =
@@ -1124,6 +1044,10 @@ fun commandLine (args: string list): unit =
                                 andalso not (warnMatch)
                                 andalso not (!keepDefUse))
       val _ =
+         if !codegen = Bytecode andalso !profile = ProfileTimeLabel
+            then usage (concat ["bytecode codegen doesn't support -profile time-label\n"])
+         else ()
+      val _ =
          case targetOS of
             Darwin => ()
           | FreeBSD => ()
@@ -1140,7 +1064,7 @@ fun commandLine (args: string list): unit =
                                       MLton.Platform.OS.toString targetOS])
                else ()
       fun printVersion (out: Out.t): unit =
-         Out.output (out, concat [Version.banner, "\n"])
+         Out.output (out, concat [version, " ", build, "\n"])
       val () =
          case !show of
             NONE => ()
@@ -1194,6 +1118,7 @@ fun commandLine (args: string list): unit =
                   datatype z = datatype Place.t
                in
                   loop [(".mlb", MLB, false),
+                        (".cm", CM, false),
                         (".sml", SML, false),
                         (".c", Generated, true),
                         (".o", O, true)]
@@ -1247,9 +1172,7 @@ fun commandLine (args: string list): unit =
                      fun maybeOutBase suf =
                         case !output of
                            NONE => suffix suf
-                         | SOME f => if File.extension f = SOME "exe"
-                                        then concat [File.base f, suf]
-                                     else concat [f, suf]
+                         | SOME f => concat [File.base f, suf]
                      val { base = outputBase, ext=_ } =
                         OS.Path.splitBaseExt (maybeOut ".ext")
                      val { file = defLibname, dir=_ } =
@@ -1349,31 +1272,19 @@ fun commandLine (args: string list): unit =
                         in
                            ()
                         end
-                  fun mkOutputO (c: Counter.t, input: File.t): File.t =
+                  fun mkOutputO (c: Counter.t, _): File.t =
                      if stop = Place.O orelse !keepO
                         then
-                           if File.dirOf input = File.dirOf (maybeOutBase ".o")
+                           if !keepGenerated
+                              orelse start = Place.Generated
                               then
-                                 concat [File.base input, ".o"]
+                                 maybeOutBase ".o"
                               else
                                  maybeOutBase
                                     (concat [".",
                                              Int.toString (Counter.next c),
                                              ".o"])
                         else temp ".o"
-                  fun mkOutputBC (c: Counter.t, input: File.t, xsuf): File.t =
-                     if stop = Place.O orelse !keepO
-                        then
-                           if File.dirOf input = File.dirOf (maybeOutBase (xsuf ^ ".bc"))
-                              then
-                                 concat [File.base input, xsuf, ".bc"]
-                              else
-                                 maybeOutBase
-                                    (concat [".",
-                                             Int.toString (Counter.next c),
-                                             xsuf,
-                                             ".bc"])
-                        else temp (xsuf ^ ".bc")
                   fun compileC (c: Counter.t, input: File.t): File.t =
                      let
                         val debugSwitches = gccDebug @ ["-DASSERT=1"]
@@ -1395,6 +1306,27 @@ fun commandLine (args: string list): unit =
                      in
                         output
                      end
+                  fun compileCAsync (c: Counter.t, input: File.t): (File.t * MLton.Process.pid) =
+                     let
+                        val debugSwitches = gccDebug @ ["-DASSERT=1"]
+                        val output = mkOutputO (c, input)
+
+                        val pid =
+                           System.systemAsync
+                            (gcc,
+                             List.concat
+                             [[ "-std=gnu99", "-c" ],
+                              if !format = Executable
+                              then [] else [ "-DLIBNAME=" ^ !libname ],
+                              if positionIndependent
+                              then [ "-fPIC", "-DPIC" ] else [],
+                              if !debug then debugSwitches else [],
+                              ccOpts,
+                              ["-o", output],
+                              [input]])
+                     in
+                        (output, pid)
+                     end
                   fun compileS (c: Counter.t, input: File.t): File.t =
                      let
                         val output = mkOutputO (c, input)
@@ -1410,36 +1342,6 @@ fun commandLine (args: string list): unit =
                      in
                         output
                      end
-                  fun compileLL (c: Counter.t, input: File.t): File.t =
-                     let
-                        val asBC = mkOutputBC (c, input, ".as")
-                        val _ =
-                           System.system
-                           (llvm_as,
-                            List.concat
-                            [llvm_asOpts,
-                             ["-o", asBC],
-                             [input]])
-                        val optBC = mkOutputBC (c, input, ".opt")
-                        val _ =
-                           System.system
-                           (llvm_opt,
-                            List.concat
-                            [llvm_optOpts,
-                             ["-o", optBC],
-                             [asBC]])
-                        val output = mkOutputO (c, input)
-                        val _ =
-                           System.system
-                           (llvm_llc,
-                            List.concat
-                            [llvm_llcOpts,
-                             ["-filetype=obj"],
-                             ["-o", output],
-                             [optBC]])
-                     in
-                        output
-                     end
                   fun compileCSO (inputs: File.t list): unit =
                      if List.forall (inputs, fn f =>
                                      SOME "o" = File.extension f)
@@ -1447,6 +1349,7 @@ fun commandLine (args: string list): unit =
                      else
                      let
                         val c = Counter.new 0
+                        val toWaitList = ref []
                         val oFiles =
                            trace (Top, "Compile and Assemble")
                            (fn () =>
@@ -1454,13 +1357,21 @@ fun commandLine (args: string list): unit =
                             (inputs, [], fn (input, ac) =>
                              let
                                 val extension = File.extension input
+                                val numCores = !Control.parallelCompile
                              in
                                 if SOME "o" = extension
                                    then input :: ac
-                                else if SOME "c" = extension
-                                   then (compileC (c, input)) :: ac
-                                else if SOME "ll" = extension
-                                   then (compileLL(c, input)) :: ac
+                                else if SOME "c" = extension then
+                                    let
+                                       val _ = if List.length (!toWaitList) > numCores then
+                                                 (ignore (List.map (!toWaitList, fn pid => Process.wait pid));
+                                                 toWaitList := [])
+                                               else ()
+                                       val (file, pid) = (compileCAsync (c, input))
+                                       val _ = toWaitList := pid::(!toWaitList)
+                                    in
+                                       file::ac
+                                    end
                                 else if SOME "s" = extension
                                         orelse SOME "S" = extension
                                    then (compileS (c, input)) :: ac
@@ -1470,12 +1381,14 @@ fun commandLine (args: string list): unit =
                                        Option.toString (fn s => s) extension])
                              end))
                            ()
+                        val _ = ignore (List.map (!toWaitList, fn pid => Process.wait pid))
+                        val _ = toWaitList := []
                      in
                         case stop of
                            Place.O => ()
                          | _ => compileO (rev oFiles)
                      end
-                  fun mkCompileSrc {listFiles, elaborate, compile} input =
+                  fun compileSml (files: File.t list) =
                      let
                         val outputs: File.t list ref = ref []
                         val r = ref 0
@@ -1510,26 +1423,117 @@ fun commandLine (args: string list): unit =
                                   end)
                         val _ =
                            case stop of
-                              Place.Files =>
-                                 Vector.foreach
-                                 (listFiles {input = input}, fn f =>
-                                  (print (String.translate
-                                          (f, fn #"\\" => "/" | c => str c))
-                                   ; print "\n"))
-                            | Place.TypeCheck =>
+                              Place.TypeCheck =>
                                  trace (Top, "Type Check SML")
-                                 elaborate
-                                 {input = input}
+                                 Compile.elaborateSML {input = files}
                             | _ =>
                                  trace (Top, "Compile SML")
-                                 compile
-                                 {input = input,
+                                 Compile.compileSML
+                                 {input = files,
                                   outputC = make (Control.C, ".c"),
-                                  outputLL = make (Control.LLVM, ".ll"),
-                                  outputS = make (Control.Assembly, ".s")}
+                                  outputS = make (Control.Assembly,
+                                                  if !debug then ".s" else ".S")}
+                     in
+                        case stop of
+                           Place.Generated => ()
+                         | Place.TypeCheck => ()
+                         | _ =>
+                              (* Shrink the heap before calling gcc. *)
+                              (MLton.GC.pack ()
+                               ; compileCSO (List.concat [!outputs, csoFiles]))
+                     end
+                  fun showFiles (fs: File.t vector) =
+                     Vector.foreach
+                     (fs, fn f =>
+                      print (concat [String.translate
+                                     (f, fn #"\\" => "/"
+                                          | c => str c),
+                                     "\n"]))
+                  fun compileCM input =
+                     let
+                        val files = CM.cm {cmfile = input}
+                        fun saveSML smlFile =
+                           File.withOut
+                           (smlFile, fn out =>
+                            (outputHeader' (ML, out)
+                             ; (List.foreach
+                                (files, fn f =>
+                                 (Out.output
+                                  (out, concat ["(*#line 0.0 \"", f, "\"*)\n"])
+                                  ; File.outputContents (f, out))))))
+                     in
+                        case stop of
+                           Place.Files =>
+                              showFiles (Vector.fromList files)
+                         | Place.SML => saveSML (maybeOut ".sml")
+                         | _ =>
+                              (if !keepSML
+                                  then saveSML (suffix ".sml")
+                               else ()
+                               ; compileSml files)
+                     end
+                  fun compileMLB file =
+                     let
+                        val outputs: File.t list ref = ref []
+                        val r = ref 0
+                        fun make (style: style, suf: string) () =
+                           let
+                              val suf = concat [".", Int.toString (!r), suf]
+                              val _ = Int.inc r
+                              val file = (if !keepGenerated
+                                             orelse stop = Place.Generated
+                                             then suffix
+                                          else temp) suf
+                              val _ = List.push (outputs, file)
+                              val out = Out.openOut file
+                              fun print s = Out.output (out, s)
+                              val _ = outputHeader' (style, out)
+                              fun done () = Out.close out
+                           in
+                              {file = file,
+                               print = print,
+                               done = done}
+                           end
+                        val _ =
+                           case !verbosity of
+                              Silent => ()
+                            | Top => ()
+                            | _ =>
+                                 outputHeader
+                                 (Control.No, fn l =>
+                                  let val out = Out.error
+                                  in Layout.output (l, out)
+                                     ; Out.newline out
+                                  end)
+                        fun saveSML smlFile =
+                           File.withOut
+                           (smlFile, fn out =>
+                            (outputHeader' (ML, out)
+                             ; (Vector.foreach
+                                (Compile.sourceFilesMLB {input = file}, fn f =>
+                                 (Out.output
+                                  (out, concat ["(*#line 0.0 \"", f, "\"*)\n"])
+                                  ; File.outputContents (f, out))))))
+                        val _ =
+                           case stop of
+                              Place.Files =>
+                                 showFiles
+                                 (Compile.sourceFilesMLB {input = file})
+                            | Place.SML => saveSML (maybeOut ".sml")
+                            | Place.TypeCheck =>
+                                 trace (Top, "Type Check SML")
+                                 Compile.elaborateMLB {input = file}
+                            | _ =>
+                                 trace (Top, "Compile SML")
+                                 Compile.compileMLB
+                                 {input = file,
+                                  outputC = make (Control.C, ".c"),
+                                  outputS = make (Control.Assembly,
+                                                  if !debug then ".s" else ".S")}
                      in
                         case stop of
                            Place.Files => ()
+                         | Place.SML => ()
                          | Place.TypeCheck => ()
                          | Place.Generated => ()
                          | _ =>
@@ -1537,17 +1541,15 @@ fun commandLine (args: string list): unit =
                               (MLton.GC.pack ()
                                ; compileCSO (List.concat [!outputs, csoFiles]))
                      end
-                  val compileSML =
-                     mkCompileSrc {listFiles = fn {input} => Vector.fromList input,
-                                   elaborate = Compile.elaborateSML,
-                                   compile = Compile.compileSML}
-                  val compileMLB =
-                     mkCompileSrc {listFiles = Compile.sourceFilesMLB,
-                                   elaborate = Compile.elaborateMLB,
-                                   compile = Compile.compileMLB}
                   fun compile () =
                      case start of
-                        Place.SML => compileSML [input]
+                        Place.CM => compileCM input
+                      | Place.SML =>
+                           Control.checkFile
+                           (input,
+                            {fail = fn s => raise Fail s,
+                             name = input,
+                             ok = fn () => compileSml [input]})
                       | Place.MLB => compileMLB input
                       | Place.Generated => compileCSO (input :: csoFiles)
                       | Place.O => compileCSO (input :: csoFiles)
@@ -1566,8 +1568,13 @@ fun commandLine (args: string list): unit =
 
 val commandLine = Process.makeCommandLine commandLine
 
-val main = fn (_, args) => commandLine args
+fun exportNJ (file: File.t): unit =
+   SMLofNJ.exportFn (file, fn (_, args) => commandLine args)
 
-val mainWrapped = fn () => OS.Process.exit (commandLine (CommandLine.arguments ()))
+fun exportMLton (): unit =
+   case CommandLine.arguments () of
+      [worldFile] =>
+         SMLofNJ.exportFn (worldFile, fn (_, args) => commandLine args)
+    | _ => Error.bug "usage: exportMLton worldFile"
 
 end

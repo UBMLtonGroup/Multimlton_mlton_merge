@@ -22,9 +22,9 @@ structure MLtonWorld: MLTON_WORLD =
        *)
       fun save' (file: string): status =
          let
-            val () = 
-               SysCall.simple' 
-               ({errVal = false}, 
+            val () =
+               SysCall.simple'
+               ({errVal = false},
                 fn () => (Prim.save (NullString.nullTerm file)
                           ; Prim.getSaveStatus (gcState)))
          in
@@ -49,7 +49,7 @@ structure MLtonWorld: MLTON_WORLD =
          if let open OS_FileSys
             in access (file, [A_READ])
             end
-            then 
+            then
                let val c = CommandLine.name ()
                in Posix.Process.exec (c, [c, "@MLton", "load-world", file, "--"])
                end

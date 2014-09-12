@@ -1,5 +1,4 @@
-(* Copyright (C) 2009-2010,2012 Matthew Fluet.
- * Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2007 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -11,6 +10,8 @@ functor TypeEnv (S: TYPE_ENV_STRUCTS): TYPE_ENV =
 struct
 
 open S
+
+type int = Int.t
 
 structure AdmitsEquality = Tycon.AdmitsEquality
 structure Field = Record.Field
@@ -146,7 +147,6 @@ structure Equality:>
        | Unknown of {whenKnown: (bool -> bool) list ref}
       datatype t =
          False
-       | Lazy of unit -> t
        | Maybe of maybe ref
        | True
 
@@ -155,7 +155,6 @@ structure Equality:>
       fun set (e: t, b: bool): bool =
          case e of
             False => b = false
-          | Lazy th => set (th (), b)
           | Maybe r =>
                (case !r of
                    Known b' => b = b'
@@ -166,7 +165,6 @@ structure Equality:>
       fun when (e: t, f: bool -> bool): bool =
          case e of
             False => f false
-          | Lazy th => when (th (), f)
           | Maybe r =>
                (case !r of
                    Known b => f b
@@ -183,8 +181,6 @@ structure Equality:>
           | (_, False) => False
           | (True, _) => e'
           | (_, True) => e
-          | (Lazy th, e') => Lazy (fn () => and2 (th (), e'))
-          | (e, Lazy th') => Lazy (fn () => and2 (e, th' ()))
           | (Maybe r, Maybe r') =>
                (case (!r, !r') of
                    (Known false, _) => False
@@ -225,7 +221,6 @@ structure Equality:>
       fun toBoolOpt (e: t): bool option =
          case e of
             False => SOME false
-          | Lazy th => toBoolOpt (th ())
           | Maybe r =>
                (case !r of
                    Known b => SOME b
@@ -241,20 +236,7 @@ structure Equality:>
          in
             case !(tyconAdmitsEquality c) of
                Always => truee
-             | Sometimes =>
-                  let
-                     val e = andd es
-                  in
-                     case e of
-                        False => falsee
-                      | _ =>
-                           Lazy
-                           (fn () =>
-                            case !(tyconAdmitsEquality c) of
-                               Always => Error.bug "TypeEnv.Equality.applyTycon: Always"
-                             | Sometimes => e
-                             | Never => falsee)
-                  end
+             | Sometimes => andd es
              | Never => falsee
          end
 
@@ -673,13 +655,13 @@ structure Type =
                               (let
                                   val r = ref (Char.toInt #"a")
                                in
-                                  fn v =>
+                                  fn _ =>
                                   let
                                      val n = !r
                                      val l =
                                         simple
                                         (str (concat
-                                              [if Tyvar.isEquality v then "''" else "'",
+                                              ["'",
                                                if n > Char.toInt #"z" 
                                                   then concat ["a", Int.toString (n - Char.toInt #"z")]
                                                else Char.toString (Char.fromInt n )]))
@@ -1607,10 +1589,6 @@ structure Scheme =
            (s, fn {canGeneralize, ...} =>
             Type.unknown {canGeneralize = canGeneralize,
                           equality = Equality.truee})))
-
-      val admitsEquality =
-         Trace.trace ("TypeEnv.Scheme.admitsEquality", layout, Bool.layout)
-         admitsEquality
 
       fun haveFrees (v: t vector): bool vector =
          let

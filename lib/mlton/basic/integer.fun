@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  *
  * MLton is released under a BSD-style license.
@@ -28,12 +27,12 @@ structure Int =
 
 structure R =
    OrderedRing (structure R = 
-                   RingWithIdentity (structure R = Ring (Int)
-                                     open R S
-                                     val one = fromInt 1)
-                open R S
-                val {compare, ...} =
-                   Relation.lessEqual {< = op <, equals = equals})
+                  RingWithIdentity (structure R = Ring (Int)
+                                   open R S
+                                   val one = fromInt 1)
+               open R S
+               val {compare, ...} =
+                  Relation.lessEqual {< = op <, equals = equals})
 open R S
 
 exception Input

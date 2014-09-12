@@ -1,5 +1,4 @@
-(* Copyright (C) 2010-2011,2013-2014 Matthew Fluet.
- * Copyright (C) 1999-2009 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2008 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -17,9 +16,10 @@ structure MLton = struct
 
 val eq = _prim "MLton_eq": 'a * 'a -> bool;
 val equal = _prim "MLton_equal": 'a * 'a -> bool;
+val bogus = _prim "MLton_bogus": unit -> 'a;
 (* val deserialize = _prim "MLton_deserialize": Word8Vector.vector -> 'a ref; *)
 val halt = _prim "MLton_halt": C_Status.t -> unit;
-val hash = _prim "MLton_hash": 'a -> Word32.word;
+val hash = _prim "MLton_hash": SeqIndex.int * 'a -> Word32.word;
 (* val serialize = _prim "MLton_serialize": 'a ref -> Word8Vector.vector; *)
 val share = _prim "MLton_share": 'a -> unit;
 val size = _prim "MLton_size": 'a ref -> C_Size.t;
@@ -62,20 +62,21 @@ structure CallStack =
 
 structure Codegen =
    struct
-      datatype t = AMD64 | C | LLVM | X86
+      datatype t = Bytecode | C | x86 | amd64
 
       val codegen =
          case _build_const "MLton_Codegen_codegen": Int32.int; of
-            0 => C
-          | 1 => X86
-          | 2 => AMD64
-          | 3 => LLVM
+            0 => Bytecode
+          | 1 => C
+          | 2 => x86
+          | 3 => amd64
           | _ => raise Primitive.Exn.Fail8 "MLton_Codegen_codegen"
 
+      val isBytecode = codegen = Bytecode
       val isC = codegen = C
-      val isAMD64 = codegen = AMD64
-      val isLLVM = codegen = LLVM
-      val isX86 = codegen = X86
+      val isX86 = codegen = x86
+      val isAmd64 = codegen = amd64
+      (* val isNative = isX86 orelse isAmd64 *)
    end
 
 structure Exn =
@@ -107,7 +108,7 @@ structure Exn =
 
 structure FFI =
    struct
-      val getOpArgsResPtr = #1 _symbol "MLton_FFI_opArgsResPtr" private: Pointer.t GetSet.t;
+      val getOpArgsResPtr = _prim "FFI_getOpArgsResPtr" : unit -> Pointer.t;
       val numExports = _build_const "MLton_FFI_numExports": Int32.int;
    end
 
@@ -141,6 +142,11 @@ structure GC =
       val unpack = _import "GC_unpack" private: GCState.t -> unit;
    end
 
+structure Parallel =
+struct
+  val compareAndSwap = _import "Parallel_compareAndSwap": Int32.int ref * Int32.int * Int32.int -> bool;
+end
+
 structure Platform =
    struct
       structure Arch =
@@ -149,13 +155,11 @@ structure Platform =
                Alpha
              | AMD64
              | ARM
-             | ARM64
              | HPPA
              | IA64
              | m68k
              | MIPS
              | PowerPC
-             | PowerPC64
              | S390
              | Sparc
              | X86
@@ -165,13 +169,11 @@ structure Platform =
                   "alpha" => Alpha
                 | "amd64" => AMD64
                 | "arm" => ARM
-                | "arm64" => ARM64
                 | "hppa" => HPPA
                 | "ia64" => IA64
                 | "m68k" => m68k
                 | "mips" => MIPS
                 | "powerpc" => PowerPC
-                | "powerpc64" => PowerPC64
                 | "s390" => S390
                 | "sparc" => Sparc
                 | "x86" => X86
@@ -204,7 +206,6 @@ structure Platform =
              | Cygwin
              | Darwin
              | FreeBSD
-             | Hurd
              | HPUX
              | Linux
              | MinGW
@@ -218,7 +219,6 @@ structure Platform =
                 | "cygwin" => Cygwin
                 | "darwin" => Darwin
                 | "freebsd" => FreeBSD
-                | "hurd" => Hurd
                 | "hpux" => HPUX
                 | "linux" => Linux
                 | "mingw" => MinGW
@@ -244,23 +244,23 @@ structure Pointer =
       type pointer = t
 
       val add =
-         _prim "CPointer_add": t * C_Ptrdiff.t -> t;
+         _prim "CPointer_add": pointer * C_Size.word -> pointer;
       val sub =
-         _prim "CPointer_sub": t * C_Ptrdiff.t -> t;
+         _prim "CPointer_sub": pointer * C_Size.word -> pointer;
       val diff =
-         _prim "CPointer_diff": t * t -> C_Ptrdiff.t;
-      val < = _prim "CPointer_lt": t * t -> bool;
+         _prim "CPointer_diff": pointer * pointer -> C_Size.word;
+      val < = _prim "CPointer_lt": pointer * pointer -> bool;
       local
-         structure S = IntegralComparisons(type t = t
+         structure S = IntegralComparisons(type t = pointer
                                            val < = <)
       in
          open S
       end
 
       val fromWord =
-         _prim "CPointer_fromWord": C_Size.t -> t;
+         _prim "CPointer_fromWord": C_Size.word -> pointer;
       val toWord =
-         _prim "CPointer_toWord": t -> C_Size.t;
+         _prim "CPointer_toWord": pointer -> C_Size.word;
 
       val null: t = fromWord 0w0
 
@@ -309,6 +309,14 @@ structure Profile =
       val getCurrent = _import "GC_getProfileCurrent" private: GCState.t -> Data.t;
       val setCurrent = _import "GC_setProfileCurrent" private : GCState.t * Data.t -> unit;
    end
+
+structure Parasite =
+struct
+  type parasite = Thread.t
+  val jumpDown = _prim "Threadlet_jumpDown" : Int32.int -> unit;
+  val prefixAndSwitchTo = _prim "Threadlet_prefixAndSwitchTo" : parasite -> unit;
+end
+
 
 structure Thread =
    struct
@@ -364,6 +372,7 @@ structure World =
       val getAmOriginal = _import "GC_getAmOriginal" private: GCState.t -> bool;
       val setAmOriginal = _import "GC_setAmOriginal" private: GCState.t * bool -> unit;
       val getSaveStatus = _import "GC_getSaveWorldStatus" private: GCState.t -> bool C_Errno.t;
+      val getIsPCML = _import "GC_getIsPCML" private: GCState.t -> bool;
       (* save's result status is accesible via getSaveStatus ().
        * It is not possible to have the type of save as
        * NullString8.t -> bool C_Errno.t, because there are two

@@ -1,5 +1,4 @@
-## Copyright (C) 2009,2013 Matthew Fluet.
- # Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+## Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  #    Jagannathan, and Stephen Weeks.
  # Copyright (C) 1997-2000 NEC Research Institute.
  #
@@ -23,31 +22,32 @@ $(NAME): $(NAME).mlb $(shell PATH="$(BIN):$$PATH" && "$(MLTON)" -stop f $(NAME).
 	@echo 'Compiling $(NAME)'
 	"$(MLTON)" $(FLAGS) $(NAME).mlb
 
+$(NAME).sml: $(NAME).cm $(shell "$(MLTON)" -stop f $(NAME).cm)
+	mlton -stop sml $(NAME).cm
+
 html/index.html: $(TEX_FILES)
 	mkdir -p html
 	hevea -fix -o html/mllex.html -exec xxdate.exe macros.hva lexgen.tex
 	cd html && hacha mllex.html && rm -f mllex.html
 
-PDFLATEX := pdflatex
+lexgen.dvi: lexgen.tex
+	latex lexgen.tex
+	latex lexgen.tex
 
-lexgen.pdf: lexgen.tex
-	$(PDFLATEX) lexgen.tex
-	$(PDFLATEX) lexgen.tex
+mllex.pdf: lexgen.tex
+	latex lexgen.tex
+	pdflatex lexgen.tex
+	mv lexgen.pdf mllex.pdf
 
-mllex.pdf: lexgen.pdf
-	cp lexgen.pdf mllex.pdf
-
-DOCS :=
-ifneq ($(shell which $(PDFLATEX) 2> /dev/null),)
-DOCS += mllex.pdf
-endif
-
-.PHONY: docs
-docs: $(DOCS)
+mllex.ps: lexgen.dvi
+	dvips -o mllex.ps lexgen.dvi
 
 .PHONY: clean
 clean:
 	../bin/clean
+
+.PHONY: docs
+docs: mllex.pdf
 
 .PHONY: test
 test: $(NAME)

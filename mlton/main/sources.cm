@@ -1,5 +1,4 @@
-(* Copyright (C) 2009,2011 Matthew Fluet.
- * Copyright (C) 1999-2005 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2005 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -9,7 +8,24 @@
 
 Group
 
+structure Char
+structure Control
+structure Date
+structure Dir
+structure Error
+structure File
+structure In
+structure Int
+structure IntInf
+structure Layout
+structure List
 structure Main
+structure Out
+structure Popt
+structure String
+structure Trace
+structure Unit
+structure Vector
 
 is
 
@@ -18,6 +34,7 @@ is
 ../atoms/sources.cm
 ../backend/sources.cm
 ../closure-convert/sources.cm
+../cm/sources.cm
 ../codegen/sources.cm
 ../control/sources.cm
 ../core-ml/sources.cm

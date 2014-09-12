@@ -1,5 +1,4 @@
-(* Copyright (C) 2009 Matthew Fluet.
- * Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
+(* Copyright (C) 1999-2006 Henry Cejtin, Matthew Fluet, Suresh
  *    Jagannathan, and Stephen Weeks.
  * Copyright (C) 1997-2000 NEC Research Institute.
  *
@@ -7,10 +6,12 @@
  * See the file MLton-LICENSE for details.
  *)
 
-functor RedundantTests (S: SSA_TRANSFORM_STRUCTS): SSA_TRANSFORM = 
+functor RedundantTests (S: REDUNDANT_TESTS_STRUCTS): REDUNDANT_TESTS = 
 struct
 
 open S
+
+type int = Int.t
 
 structure Rel =
    struct
@@ -90,7 +91,7 @@ structure Fact =
 
 open Exp Transfer
 
-fun transform (Program.T {globals, datatypes, functions, main}) =
+fun simplify (Program.T {globals, datatypes, functions, main}) =
    let
       datatype varInfo =
          Const of Const.t
